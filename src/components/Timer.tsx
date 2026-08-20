@@ -7,7 +7,7 @@ interface TimerProps {
 }
 
 export default memo(function Timer({ startTime, onTimeUp }: TimerProps) {
-  const TOTAL_MS = 90 * 60 * 1000; // 90 minutes
+  const TOTAL_MS = 60 * 60 * 1000; // 60 minutes
 
   // Initial remaining hisoblash (sahifa qayta yuklansa ham to'g'ri ko'rsatadi)
   const [remaining, setRemaining] = useState(() =>

@@ -125,10 +125,19 @@ export default function AdminPage() {
               ? `${String.fromCharCode(65 + displayPos)}) ${q.options[answer.selected]}`
               : "Javob berilmadi";
           correctAnswer = `${String.fromCharCode(65 + correctDisplayPos)}) ${q.options[correctIdx]}`;
-        } else if (q.type === "dragdrop" && answer?.type === "dragdrop") {
-          correct = JSON.stringify(answer.order) === JSON.stringify(q.correctOrder);
-          studentAnswer = answer.order.map((i) => q.lines[i]).join(" → ");
-          correctAnswer = q.correctOrder.map((i) => q.lines[i]).join(" → ");
+        } else if (q.type === "truefalse" && answer?.type === "truefalse") {
+          correct = answer.selected === q.answer;
+          studentAnswer = answer.selected === null ? "Javob berilmadi" : answer.selected ? "To'g'ri" : "Noto'g'ri";
+          correctAnswer = q.answer ? "To'g'ri" : "Noto'g'ri";
+        } else if ((q.type === "code" || q.type === "fix") && answer?.type === q.type) {
+          correct = q.accepted.some((expected) => expected.trim() === answer.value.trim());
+          studentAnswer = answer.value || "Javob berilmadi";
+          correctAnswer = q.accepted[0];
+        } else if (q.type === "drag" && answer?.type === "dragdrop") {
+          const correctOrder = q.correctOrder.map((token) => q.tokens.indexOf(token));
+          correct = JSON.stringify(answer.order) === JSON.stringify(correctOrder);
+          studentAnswer = answer.order.map((i) => q.tokens[i]).join(" → ");
+          correctAnswer = q.correctOrder.join(" → ");
         }
 
         const earned = correct ? q.points : 0;
@@ -354,7 +363,7 @@ export default function AdminPage() {
                               <div className="flex items-center gap-2 mb-1.5">
                                 <span className="text-xs font-bold text-gray-500">#{r.displayOrder}</span>
                                 <span className={`text-xs px-2 py-0.5 rounded-full font-semibold border ${CATEGORY_COLORS[cat]}`}>
-                                  {q.type === "dragdrop" ? "Drag & Drop" : "MCQ"}
+                                  {q.type === "drag" ? "Drag & Drop" : q.type.toUpperCase()}
                                 </span>
                                 <span className={`ml-auto text-sm font-bold ${r.correct ? "text-[#006400]" : "text-red-500"}`}>
                                   {r.earned}/{r.points}

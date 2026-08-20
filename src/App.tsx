@@ -20,11 +20,10 @@ const Navigation = memo(function Navigation({
         isActive={view === "exam"}
         onClick={() => onViewChange("exam")}
       />
-      {/* Hidden admin indicator - click 3 times on exam title to enable */}
-      <div 
+      <NavButton
+        label="Admin"
+        isActive={view === "admin"}
         onClick={onAdminClick}
-        className="hidden"
-        title="Secret admin access"
       />
     </div>
   );
@@ -47,7 +46,7 @@ export default memo(function App() {
 
   const handleAdminClick = useCallback(() => {
     clickCountRef.current += 1;
-    
+
     if (clickTimeoutRef.current) {
       clearTimeout(clickTimeoutRef.current);
     }
@@ -64,7 +63,8 @@ export default memo(function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === "U") {
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "u") {
+        e.preventDefault();
         setView((v) => (v === "admin" ? "exam" : "admin"));
       }
     };

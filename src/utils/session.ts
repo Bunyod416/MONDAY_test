@@ -1,10 +1,19 @@
-import { questions, CATEGORIES, getByCategory, type Question, type Category } from "./data/questions";
+import {
+  questions,
+  CATEGORIES,
+  getByCategory,
+  type Question,
+  type Category,
+} from "./data/questions";
 
-const COOKIE_NAME = "exam_session_v3";
+const COOKIE_NAME = "exam_session_v4";
 const COOKIE_DAYS = 1;
 
 export type SessionAnswer =
   | { type: "mcq"; selected: number | null }
+  | { type: "truefalse"; selected: boolean | null }
+  | { type: "code"; value: string }
+  | { type: "fix"; value: string }
   | { type: "dragdrop"; order: number[] };
 
 export type ExamSession = {
@@ -64,11 +73,11 @@ function shuffleArray<T>(arr: T[]): T[] {
 export function createSession(studentName: string): ExamSession {
   const categoryOrder: Record<string, number[]> = {};
   const optionOrders: Record<number, number[]> = {};
+  const dragOrders: Record<number, number[]> = {};
   const answers: Record<number, SessionAnswer> = {};
 
   for (const cat of CATEGORIES) {
-    // Faqat mcq savollarni olish
-    const qs = getByCategory(cat).filter((q) => q.type === "mcq");
+    const qs = getByCategory(cat);
     categoryOrder[cat] = shuffleArray(qs.map((q) => q.id));
   }
 
@@ -76,8 +85,15 @@ export function createSession(studentName: string): ExamSession {
     if (q.type === "mcq") {
       optionOrders[q.id] = shuffleArray(q.options.map((_, i) => i));
       answers[q.id] = { type: "mcq", selected: null };
+    } else if (q.type === "truefalse") {
+      answers[q.id] = { type: "truefalse", selected: null };
+    } else if (q.type === "code" || q.type === "fix") {
+      answers[q.id] = { type: q.type, value: "" };
+    } else if (q.type === "drag") {
+      const order = q.tokens.map((_, i) => i);
+      answers[q.id] = { type: "dragdrop", order };
+      dragOrders[q.id] = order;
     }
-    // Boshqa turdagi savollar (truefalse, code, drag, fix) o'tkazib yuboriladi
   }
 
   return {
@@ -85,7 +101,7 @@ export function createSession(studentName: string): ExamSession {
     startTime: Date.now(),
     categoryOrder: categoryOrder as Record<Category, number[]>,
     optionOrders,
-    dragOrders: {},
+    dragOrders,
     answers,
     submitted: false,
   };
@@ -115,9 +131,21 @@ export function gradeSession(session: ExamSession): {
     let correct = false;
 
     if (q.type === "mcq" && answer?.type === "mcq") {
+      correct = answer.selected === q.answer.charCodeAt(0) - 65;
+    } else if (q.type === "truefalse" && answer?.type === "truefalse") {
       correct = answer.selected === q.answer;
-    } else if (q.type === "dragdrop" && answer?.type === "dragdrop") {
-      correct = JSON.stringify(answer.order) === JSON.stringify(q.correctOrder);
+    } else if (
+      (q.type === "code" || q.type === "fix") &&
+      answer?.type === q.type
+    ) {
+      correct = q.accepted.some(
+        (expected) => expected.trim() === answer.value.trim(),
+      );
+    } else if (q.type === "drag" && answer?.type === "dragdrop") {
+      const correctOrder = q.correctOrder.map((token) =>
+        q.tokens.indexOf(token),
+      );
+      correct = JSON.stringify(answer.order) === JSON.stringify(correctOrder);
     }
 
     const pts = correct ? q.points : 0;

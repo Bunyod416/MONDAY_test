@@ -1,18 +1,9 @@
 import { useState, useRef } from "react";
 import { GripVertical } from "lucide-react";
-
-// Local type — questions.ts da DragDropQuestion yo'q
-type DragDropQuestion = {
-  id: number;
-  type: string;
-  question: string;
-  lines: string[];
-  correctOrder: number[];
-  points: number;
-};
+import type { DragQuestion } from "../utils/data/questions";
 
 type Props = {
-  question: DragDropQuestion;
+  question: DragQuestion;
   questionNumber: number;
   currentOrder: number[];
   onReorder: (newOrder: number[]) => void;
@@ -89,7 +80,7 @@ export default function DragDropCard({
             {question.question}
           </p>
           <span className="inline-block mt-1 text-xs text-[#006400] font-semibold bg-green-50 px-2 py-0.5 rounded-full">
-            {question.points} ball • Drag & Drop
+            {question.points} ball • Tartiblang
           </span>
         </div>
       </div>
@@ -105,17 +96,16 @@ export default function DragDropCard({
             onDragEnd={handleDragEnd}
             onTouchStart={() => handleTouchStart(pos)}
             onTouchEnd={() => handleTouchEnd(pos)}
-            className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border-2 cursor-grab active:cursor-grabbing transition-all duration-100 select-none ${
-              draggingIdx === pos
+            className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border-2 cursor-grab active:cursor-grabbing transition-all duration-100 select-none ${draggingIdx === pos
                 ? "opacity-40 border-[#006400] bg-green-50"
                 : overIdx === pos
-                ? "border-[#006400] bg-green-50 shadow-md"
-                : "border-gray-200 bg-gray-50 hover:border-green-300"
-            }`}
+                  ? "border-[#006400] bg-green-50 shadow-md"
+                  : "border-gray-200 bg-gray-50 hover:border-green-300"
+              }`}
           >
             <GripVertical size={16} className="text-gray-400 flex-shrink-0" />
             <span className="text-gray-500 w-5 text-xs">{pos + 1}.</span>
-            <span className="text-gray-800 flex-1">{question.lines[lineIdx]}</span>
+            <span className="text-gray-800 flex-1">{question.tokens[lineIdx]}</span>
           </div>
         ))}
       </div>

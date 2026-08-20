@@ -10,18 +10,18 @@ import {
 import ExamHeader from "./ExamHeader";
 import MCQQuestionCard from "./MCQQuestionCard";
 import DragDropCard from "./DragDropCard";
+import QuestionResponseCard from "./QuestionResponseCard";
 import Timer from "./Timer";
 import {
   loadSession,
   saveSession,
   createSession,
-  clearSession,
   getQuestionById,
   type ExamSession,
   type SessionAnswer,
 } from "../utils/session";
 import { encodeResult } from "../utils/encoding";
-import { CATEGORIES, getByCategory, type Category } from "../utils/data/questions";
+import { CATEGORIES, type Category } from "../utils/data/questions";
 
 // ─── Animatsiya stillari (global bir marta inject qilinadi) ───
 const ANIM_STYLES = `
@@ -183,6 +183,8 @@ export default function ExamPage() {
   const [fsBlocked, setFsBlocked] = useState(false);
   const [downloadCountdown, setDownloadCountdown] = useState(0);
   const fsViolations = useRef(0);
+  const scrollViolationLock = useRef(false);
+  const [violationReason, setViolationReason] = useState<"fullscreen" | "scroll">("fullscreen");
 
   useEffect(() => {
     const s = loadSession();
@@ -193,15 +195,56 @@ export default function ExamPage() {
     }
   }, []);
 
+  const registerViolation = useCallback((reason: "fullscreen" | "scroll") => {
+    setViolationReason(reason);
+    fsViolations.current += 1;
+    if (fsViolations.current >= 3) setFsBlocked(true);
+    else setFsWarning(true);
+  }, []);
+
   const onFsChange = useCallback(() => {
     if (!document.fullscreenElement) {
-      fsViolations.current += 1;
-      if (fsViolations.current >= 3) setFsBlocked(true);
-      else setFsWarning(true);
+      registerViolation("fullscreen");
     } else {
       setFsWarning(false);
     }
-  }, []);
+  }, [registerViolation]);
+
+  useEffect(() => {
+    if (phase !== "exam") return;
+
+    const handleScroll = () => {
+      if (window.scrollY <= 0) return;
+      window.scrollTo(0, 0);
+      registerViolation("scroll");
+    };
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY > 0 && !scrollViolationLock.current) {
+        scrollViolationLock.current = true;
+        registerViolation("scroll");
+        window.setTimeout(() => {
+          scrollViolationLock.current = false;
+        }, 500);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("wheel", handleWheel, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("wheel", handleWheel);
+    };
+  }, [phase, registerViolation]);
+
+  /* Keep the test viewport fixed while the exam is active. */
+  useEffect(() => {
+    if (phase !== "exam") return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [phase]);
 
   useEffect(() => {
     document.addEventListener("fullscreenchange", onFsChange);
@@ -222,7 +265,7 @@ export default function ExamPage() {
   }, [phase]);
 
   async function requestFullscreen() {
-    try { await document.documentElement.requestFullscreen(); } catch { }
+    try { await document.documentElement.requestFullscreen(); } catch { return; }
   }
 
   function handleRegister(e: React.FormEvent) {
@@ -236,7 +279,11 @@ export default function ExamPage() {
   }
 
   async function handleStartExam() {
-    await requestFullscreen();
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch {
+      return;
+    }
     setPhase("exam");
     setFsWarning(false);
     setFsBlocked(false);
@@ -245,6 +292,11 @@ export default function ExamPage() {
   async function handleResumeFullscreen() {
     await requestFullscreen();
     setFsWarning(false);
+  }
+
+  function handleViolationAction() {
+    if (violationReason === "scroll") setFsWarning(false);
+    else void handleResumeFullscreen();
   }
 
   function updateAnswer(questionId: number, answer: SessionAnswer) {
@@ -276,11 +328,12 @@ export default function ExamPage() {
   }, [phase, downloadCountdown]);
 
   useEffect(() => {
-    if (phase !== "submitted" || downloadCountdown === 0) return;
+    const shouldWarn = phase === "exam" || (phase === "submitted" && downloadCountdown > 0);
+    if (!shouldWarn) return;
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
-      e.returnValue = "Faylni yuklab oling! Balki chiqib ketmoqdasiz?";
+      e.returnValue = "Imtihon yakunlanmagan. Chiqishni xohlaysizmi?";
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
@@ -311,15 +364,6 @@ export default function ExamPage() {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
-  }
-
-  function handleNewExam() {
-    clearSession();
-    setSession(null);
-    setPhase("register");
-    setFirstName("");
-    setLastName("");
-    fsViolations.current = 0;
   }
 
   // ════════════════════════════════════════════════════════
@@ -483,7 +527,10 @@ export default function ExamPage() {
     const ids = session!.categoryOrder[cat] ?? [];
     return ids.filter((id) => {
       const a = session!.answers[id];
-      return a?.type === "mcq" ? a.selected !== null : true;
+      if (!a) return false;
+      if (a.type === "mcq" || a.type === "truefalse") return a.selected !== null;
+      if (a.type === "code" || a.type === "fix") return a.value.trim().length > 0;
+      return a.order.length > 0;
     }).length;
   }
 
@@ -511,7 +558,7 @@ export default function ExamPage() {
           <AlertTriangle size={60} className="mb-4" />
           <h2 className="text-2xl sm:text-3xl font-bold mb-3">Imtihon Bloklab Qo'yildi</h2>
           <p className="text-red-200 text-base max-w-sm">
-            Siz 3 marta to'liq ekrandan chiqdingiz. O'qituvchingizga murojaat qiling.
+            Siz 3 marta imtihon qoidasini buzdingiz. O'qituvchingizga murojaat qiling.
           </p>
         </div>
       )}
@@ -520,16 +567,18 @@ export default function ExamPage() {
       {fsWarning && !fsBlocked && (
         <div className="fixed inset-0 z-40 bg-black/80 flex flex-col items-center justify-center text-white p-8 text-center">
           <AlertTriangle size={52} className="mb-4 text-yellow-400" />
-          <h2 className="text-xl sm:text-2xl font-bold mb-2">To'liq Ekrandan Chiqdingiz!</h2>
+          <h2 className="text-xl sm:text-2xl font-bold mb-2">
+            {violationReason === "scroll" ? "Scroll qilish taqiqlangan!" : "To'liq Ekrandan Chiqdingiz!"}
+          </h2>
           <p className="text-gray-300 mb-1 text-sm">Ogohlantirish: {fsViolations.current}/3</p>
           <p className="text-gray-400 text-sm mb-6 max-w-xs">
             Yana {3 - fsViolations.current} marta chiqsangiz imtihon bloklanadi.
           </p>
           <button
-            onClick={handleResumeFullscreen}
+            onClick={handleViolationAction}
             className="bg-[#006400] hover:bg-green-700 text-white font-bold px-8 py-3.5 rounded-2xl transition-all duration-200 active:scale-[0.98]"
           >
-            To'liq Ekranga Qaytish
+            {violationReason === "scroll" ? "Imtihonga qaytish" : "To'liq Ekranga Qaytish"}
           </button>
         </div>
       )}
@@ -631,6 +680,26 @@ export default function ExamPage() {
                 }
               />
             </div>
+          ) : currentQ && currentQ.type === "drag" ? (
+            <div className="anim-card-in" key={currentQ.id}>
+              <DragDropCard
+                question={currentQ}
+                questionNumber={currentIdx + 1}
+                currentOrder={session.answers[currentQ.id]?.type === "dragdrop"
+                  ? (session.answers[currentQ.id] as { type: "dragdrop"; order: number[] }).order
+                  : currentQ.tokens.map((_, i) => i)}
+                onReorder={(order) => updateAnswer(currentQ.id, { type: "dragdrop", order })}
+              />
+            </div>
+          ) : currentQ ? (
+            <div className="anim-card-in" key={currentQ.id}>
+              <QuestionResponseCard
+                question={currentQ}
+                questionNumber={currentIdx + 1}
+                answer={session.answers[currentQ.id]}
+                onAnswer={(answer) => updateAnswer(currentQ.id, answer)}
+              />
+            </div>
           ) : null}
         </div>
       </div>
@@ -653,7 +722,13 @@ export default function ExamPage() {
           <div className="flex-1 flex items-center justify-center gap-1 dots-scroll overflow-x-auto py-1">
             {catIds.map((id, i) => {
               const ans = session.answers[id];
-              const isAnswered = ans?.type === "mcq" ? ans.selected !== null : true;
+              const isAnswered = ans
+                ? ans.type === "mcq" || ans.type === "truefalse"
+                  ? ans.selected !== null
+                  : ans.type === "code" || ans.type === "fix"
+                    ? ans.value.trim().length > 0
+                    : ans.order.length > 0
+                : false;
               const isActive = i === currentIdx;
               return (
                 <button

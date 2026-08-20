@@ -1,5 +1,11 @@
 export type Category = "HTML" | "CSS" | "JavaScript";
-export type QuestionType = "mcq" | "truefalse" | "code" | "drag" | "fix" | "dragdrop";
+export type QuestionType =
+  | "mcq"
+  | "truefalse"
+  | "code"
+  | "drag"
+  | "fix"
+  | "dragdrop";
 
 // ─── Base types ──────────────────────────────────────────────────────────────
 
@@ -72,7 +78,6 @@ export type Question =
 // ─── ID generator: HTML 101–125, CSS 201–225, JS 301–325 ─────────────────────
 
 export const questions: Question[] = [
-
   // ══════════════════════════════════════════════════════════════════════════════
   // HTML (25 savol | ~100 ball)
   // 10 MCQ + 5 TrueFalse + 5 Code + 3 Drag + 2 Fix
@@ -166,7 +171,8 @@ export const questions: Question[] = [
     type: "mcq",
     category: "HTML",
     topic: "Semantik teglar",
-    question: "Sahifaning asosiy navigatsiya qismi uchun qaysi semantik teg ishlatiladi?",
+    question:
+      "Sahifaning asosiy navigatsiya qismi uchun qaysi semantik teg ishlatiladi?",
     options: ["A) header", "B) menu", "C) nav", "D) section"],
     answer: "C",
     hint: "<nav> — navigation degan ma'noni anglatadi.",
@@ -177,7 +183,8 @@ export const questions: Question[] = [
     type: "mcq",
     category: "HTML",
     topic: "Atributlar",
-    question: "Rasmning muqobil matni (screen reader uchun) qaysi atribut orqali beriladi?",
+    question:
+      "Rasmning muqobil matni (screen reader uchun) qaysi atribut orqali beriladi?",
     options: ["A) title", "B) src", "C) alt", "D) name"],
     answer: "C",
     hint: "alt — alternative text. Rasm yuklanmasa ko'rsatiladi.",
@@ -188,7 +195,8 @@ export const questions: Question[] = [
     type: "mcq",
     category: "HTML",
     topic: "Formalar",
-    question: "Foydalanuvchiga bir nechta variantdan faqat bittasini tanlash imkoniyatini beruvchi input turi qaysi?",
+    question:
+      "Foydalanuvchiga bir nechta variantdan faqat bittasini tanlash imkoniyatini beruvchi input turi qaysi?",
     options: [
       "A) type='checkbox'",
       "B) type='radio'",
@@ -236,7 +244,8 @@ export const questions: Question[] = [
     type: "truefalse",
     category: "HTML",
     topic: "Atributlar",
-    question: "<a> tegida target='_blank' atributi havolani yangi tabda ochadi.",
+    question:
+      "<a> tegida target='_blank' atributi havolani yangi tabda ochadi.",
     answer: true,
     hint: "_blank — yangi tab yoki oyna ochadi.",
     points: 4,
@@ -258,7 +267,8 @@ export const questions: Question[] = [
     type: "code",
     category: "HTML",
     topic: "Havolalar",
-    question: "'Google' deb yoziladigan, https://google.com ga boradigan havola yozing.",
+    question:
+      "'Google' deb yoziladigan, https://google.com ga boradigan havola yozing.",
     placeholder: "<!-- Havolani shu yerga yozing -->",
     accepted: [
       `<a href="https://google.com">Google</a>`,
@@ -329,7 +339,8 @@ export const questions: Question[] = [
     type: "drag",
     category: "HTML",
     topic: "Havola tegi",
-    question: "Tokenlarni to'g'ri tartibga qo'ying — to'liq havola hosil qiling:",
+    question:
+      "Tokenlarni to'g'ri tartibga qo'ying — to'liq havola hosil qiling:",
     tokens: [`</a>`, `<a`, `href="https://google.com"`, `>`, `Google`],
     correctOrder: [`<a`, `href="https://google.com"`, `>`, `Google`, `</a>`],
     hint: "a tegi: ochilish, atribut, >, matn, yopilish.",
@@ -352,8 +363,20 @@ export const questions: Question[] = [
     category: "HTML",
     topic: "HTML skelet",
     question: "HTML5 skeletini to'g'ri tartibda joylashtiring:",
-    tokens: [`<body></body>`, `<!DOCTYPE html>`, `</html>`, `<html>`, `<head></head>`],
-    correctOrder: [`<!DOCTYPE html>`, `<html>`, `<head></head>`, `<body></body>`, `</html>`],
+    tokens: [
+      `<body></body>`,
+      `<!DOCTYPE html>`,
+      `</html>`,
+      `<html>`,
+      `<head></head>`,
+    ],
+    correctOrder: [
+      `<!DOCTYPE html>`,
+      `<html>`,
+      `<head></head>`,
+      `<body></body>`,
+      `</html>`,
+    ],
     hint: "DOCTYPE birinchi, so'ng html, ichida head va body.",
     points: 4,
   },
@@ -364,7 +387,8 @@ export const questions: Question[] = [
     type: "fix",
     category: "HTML",
     topic: "Rasm tegi",
-    question: "Quyidagi kodda xato bor. Toping va to'g'irlang:\n<img src=\"rasm.jpg\" alt=\"Rasm>",
+    question:
+      'Quyidagi kodda xato bor. Toping va to\'g\'irlang:\n<img src="rasm.jpg" alt="Rasm>',
     brokenCode: `<img src="rasm.jpg" alt="Rasm>`,
     accepted: [
       `<img src="rasm.jpg" alt="Rasm">`,
@@ -378,7 +402,8 @@ export const questions: Question[] = [
     type: "fix",
     category: "HTML",
     topic: "Ro'yxat",
-    question: "Quyidagi kodda xato bor. Toping va to'g'irlang:\n<ul>\n  <li>Olma\n  <li>Nok</li>\n</ul>",
+    question:
+      "Quyidagi kodda xato bor. Toping va to'g'irlang:\n<ul>\n  <li>Olma\n  <li>Nok</li>\n</ul>",
     brokenCode: `<ul>\n  <li>Olma\n  <li>Nok</li>\n</ul>`,
     accepted: [`<ul>\n  <li>Olma</li>\n  <li>Nok</li>\n</ul>`],
     hint: "Har bir <li> tegi </li> bilan yopilishi shart.",
@@ -473,7 +498,8 @@ export const questions: Question[] = [
     type: "mcq",
     category: "CSS",
     topic: "Flexbox",
-    question: "Flex elementlarni gorizontal o'rtaga tekislash uchun qaysi xususiyat ishlatiladi?",
+    question:
+      "Flex elementlarni gorizontal o'rtaga tekislash uchun qaysi xususiyat ishlatiladi?",
     options: [
       "A) align-items: center",
       "B) text-align: center",
@@ -505,7 +531,8 @@ export const questions: Question[] = [
     type: "mcq",
     category: "CSS",
     topic: "Border-radius",
-    question: "Elementning burchaklarini yumaloq qilish uchun qaysi xususiyat ishlatiladi?",
+    question:
+      "Elementning burchaklarini yumaloq qilish uchun qaysi xususiyat ishlatiladi?",
     options: [
       "A) corner-radius",
       "B) round-border",
@@ -549,7 +576,8 @@ export const questions: Question[] = [
     type: "truefalse",
     category: "CSS",
     topic: "Flexbox",
-    question: "align-items: center — flex elementlarni vertikal o'rtaga tekislaydi.",
+    question:
+      "align-items: center — flex elementlarni vertikal o'rtaga tekislaydi.",
     answer: true,
     hint: "align-items — kross o'q (vertikal) bo'ylab tekislaydi.",
     points: 4,
@@ -579,7 +607,8 @@ export const questions: Question[] = [
     type: "truefalse",
     category: "CSS",
     topic: "Transition",
-    question: "transition xususiyati CSS o'zgarishlarini silliq animatsiya qiladi.",
+    question:
+      "transition xususiyati CSS o'zgarishlarini silliq animatsiya qiladi.",
     answer: true,
     hint: "transition: xususiyat vaqt — o'zgarish animatsiyali bo'ladi.",
     points: 4,
@@ -593,10 +622,7 @@ export const questions: Question[] = [
     topic: "Selektorlar",
     question: ".title klassidagi elementning rangini #2e7d32 qiling.",
     placeholder: "/* CSS kodini shu yerga yozing */",
-    accepted: [
-      `.title {\n  color: #2e7d32;\n}`,
-      `.title{color:#2e7d32;}`,
-    ],
+    accepted: [`.title {\n  color: #2e7d32;\n}`, `.title{color:#2e7d32;}`],
     hint: "Class selektori: .klassNomi { xususiyat: qiymat; }",
     points: 4,
   },
@@ -605,7 +631,8 @@ export const questions: Question[] = [
     type: "code",
     category: "CSS",
     topic: "Flexbox",
-    question: ".box elementini flex qiling va elementlarni gorizontal va vertikal o'rtaga tekislang.",
+    question:
+      ".box elementini flex qiling va elementlarni gorizontal va vertikal o'rtaga tekislang.",
     placeholder: "/* CSS kodini shu yerga yozing */",
     accepted: [
       `.box {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n}`,
@@ -619,7 +646,8 @@ export const questions: Question[] = [
     type: "code",
     category: "CSS",
     topic: "Box model",
-    question: ".card elementiga ichki bo'shliq 16px va tashqi bo'shliq 8px bering.",
+    question:
+      ".card elementiga ichki bo'shliq 16px va tashqi bo'shliq 8px bering.",
     placeholder: "/* CSS kodini shu yerga yozing */",
     accepted: [
       `.card {\n  padding: 16px;\n  margin: 8px;\n}`,
@@ -633,7 +661,8 @@ export const questions: Question[] = [
     type: "code",
     category: "CSS",
     topic: "Hover",
-    question: ".btn tugmasi hover bo'lganda fon rangini #1b5e20 ga o'zgartiring.",
+    question:
+      ".btn tugmasi hover bo'lganda fon rangini #1b5e20 ga o'zgartiring.",
     placeholder: "/* CSS kodini shu yerga yozing */",
     accepted: [
       `.btn:hover {\n  background-color: #1b5e20;\n}`,
@@ -648,7 +677,8 @@ export const questions: Question[] = [
     type: "code",
     category: "CSS",
     topic: "Grid",
-    question: ".grid elementini 3 ustunli grid ga aylantiring. Oraliq 24px bo'lsin.",
+    question:
+      ".grid elementini 3 ustunli grid ga aylantiring. Oraliq 24px bo'lsin.",
     placeholder: "/* CSS kodini shu yerga yozing */",
     accepted: [
       `.grid {\n  display: grid;\n  grid-template-columns: repeat(3, 1fr);\n  gap: 24px;\n}`,
@@ -664,9 +694,16 @@ export const questions: Question[] = [
     type: "drag",
     category: "CSS",
     topic: "Flexbox",
-    question: "Tokenlarni to'g'ri tartibga qo'ying — flex markazlash kodini hosil qiling:",
+    question:
+      "Tokenlarni to'g'ri tartibga qo'ying — flex markazlash kodini hosil qiling:",
     tokens: [`center;`, `display: flex;`, `justify-content:`, `.box {`, `}`],
-    correctOrder: [`.box {`, `display: flex;`, `justify-content:`, `center;`, `}`],
+    correctOrder: [
+      `.box {`,
+      `display: flex;`,
+      `justify-content:`,
+      `center;`,
+      `}`,
+    ],
     hint: "display: flex avval yoziladi, keyin justify-content.",
     points: 4,
   },
@@ -675,9 +712,22 @@ export const questions: Question[] = [
     type: "drag",
     category: "CSS",
     topic: "Grid",
-    question: "Tokenlarni to'g'ri tartibga qo'ying — 3 ustunli grid hosil qiling:",
-    tokens: [`1fr);`, `.grid {`, `grid-template-columns: repeat(3,`, `display: grid;`, `}`],
-    correctOrder: [`.grid {`, `display: grid;`, `grid-template-columns: repeat(3,`, `1fr);`, `}`],
+    question:
+      "Tokenlarni to'g'ri tartibga qo'ying — 3 ustunli grid hosil qiling:",
+    tokens: [
+      `1fr);`,
+      `.grid {`,
+      `grid-template-columns: repeat(3,`,
+      `display: grid;`,
+      `}`,
+    ],
+    correctOrder: [
+      `.grid {`,
+      `display: grid;`,
+      `grid-template-columns: repeat(3,`,
+      `1fr);`,
+      `}`,
+    ],
     hint: "display: grid avval, keyin grid-template-columns.",
     points: 4,
   },
@@ -686,7 +736,8 @@ export const questions: Question[] = [
     type: "drag",
     category: "CSS",
     topic: "Hover va Transition",
-    question: "Tokenlarni to'g'ri tartibga qo'ying — hover effekti hosil qiling:",
+    question:
+      "Tokenlarni to'g'ri tartibga qo'ying — hover effekti hosil qiling:",
     tokens: [`background: #1b5e20;`, `.btn:hover {`, `}`],
     correctOrder: [`.btn:hover {`, `background: #1b5e20;`, `}`],
     hint: ":hover pseudo-klass elementga sichqoncha tekkanda ishlaydi.",
@@ -699,7 +750,8 @@ export const questions: Question[] = [
     type: "fix",
     category: "CSS",
     topic: "CSS sintaksis",
-    question: "Quyidagi kodda xato bor. Toping va to'g'irlang:\n.title {\n  color: #2e7d32\n  font-size: 24px;\n}",
+    question:
+      "Quyidagi kodda xato bor. Toping va to'g'irlang:\n.title {\n  color: #2e7d32\n  font-size: 24px;\n}",
     brokenCode: `.title {\n  color: #2e7d32\n  font-size: 24px;\n}`,
     accepted: [`.title {\n  color: #2e7d32;\n  font-size: 24px;\n}`],
     hint: "Har bir CSS qoidasi nuqta-vergul (;) bilan tugatilishi shart.",
@@ -710,7 +762,8 @@ export const questions: Question[] = [
     type: "fix",
     category: "CSS",
     topic: "Flexbox",
-    question: "Quyidagi kodda xato bor. Toping va to'g'irlang:\n.nav {\n  display: flexbox;\n  gap: 12px;\n}",
+    question:
+      "Quyidagi kodda xato bor. Toping va to'g'irlang:\n.nav {\n  display: flexbox;\n  gap: 12px;\n}",
     brokenCode: `.nav {\n  display: flexbox;\n  gap: 12px;\n}`,
     accepted: [`.nav {\n  display: flex;\n  gap: 12px;\n}`],
     hint: "To'g'ri qiymat 'flexbox' emas, 'flex' deb yoziladi.",
@@ -728,7 +781,8 @@ export const questions: Question[] = [
     type: "mcq",
     category: "JavaScript",
     topic: "O'zgaruvchilar",
-    question: "Qayta o'zgartirib bo'lmaydigan o'zgaruvchi qaysi kalit so'z bilan e'lon qilinadi?",
+    question:
+      "Qayta o'zgartirib bo'lmaydigan o'zgaruvchi qaysi kalit so'z bilan e'lon qilinadi?",
     options: ["A) var", "B) let", "C) const", "D) fixed"],
     answer: "C",
     hint: "const — constant, ya'ni doimiy qiymat. Bir marta beriladi, o'zgartirilmaydi.",
@@ -841,7 +895,8 @@ export const questions: Question[] = [
     type: "mcq",
     category: "JavaScript",
     topic: "JSON",
-    question: "JavaScript ob'ektini JSON formatiga o'tkazish uchun qaysi metod ishlatiladi?",
+    question:
+      "JavaScript ob'ektini JSON formatiga o'tkazish uchun qaysi metod ishlatiladi?",
     options: [
       "A) JSON.parse()",
       "B) JSON.convert()",
@@ -857,7 +912,8 @@ export const questions: Question[] = [
     type: "mcq",
     category: "JavaScript",
     topic: "Clipboard",
-    question: "Matnni foydalanuvchi clipboard'iga yozish uchun qaysi API ishlatiladi?",
+    question:
+      "Matnni foydalanuvchi clipboard'iga yozish uchun qaysi API ishlatiladi?",
     options: [
       "A) document.clipboard.write()",
       "B) window.copy()",
@@ -875,7 +931,8 @@ export const questions: Question[] = [
     type: "truefalse",
     category: "JavaScript",
     topic: "O'zgaruvchilar",
-    question: "let bilan e'lon qilingan o'zgaruvchini qayta o'zgartirish mumkin.",
+    question:
+      "let bilan e'lon qilingan o'zgaruvchini qayta o'zgartirish mumkin.",
     answer: true,
     hint: "let — qayta tayinlash mumkin. const esa tayinlanmaydi.",
     points: 4,
@@ -895,7 +952,8 @@ export const questions: Question[] = [
     type: "truefalse",
     category: "JavaScript",
     topic: "Massivlar",
-    question: "JavaScript massividagi birinchi element indeksi 1 dan boshlanadi.",
+    question:
+      "JavaScript massividagi birinchi element indeksi 1 dan boshlanadi.",
     answer: false,
     hint: "Massiv indeksi 0 dan boshlanadi: arr[0] — birinchi element.",
     points: 4,
@@ -927,7 +985,8 @@ export const questions: Question[] = [
     type: "code",
     category: "JavaScript",
     topic: "O'zgaruvchilar",
-    question: "'Jasur' qiymatini saqlaydiganconst o'zgaruvchi e'lon qiling va konsolga chiqaring.",
+    question:
+      "'Jasur' qiymatini saqlaydiganconst o'zgaruvchi e'lon qiling va konsolga chiqaring.",
     placeholder: "// Kodingizni shu yerga yozing",
     accepted: [
       `const ism = "Jasur";\nconsole.log(ism);`,
@@ -972,7 +1031,8 @@ export const questions: Question[] = [
     type: "code",
     category: "JavaScript",
     topic: "localStorage",
-    question: "'til' kaliti bilan 'JavaScript' qiymatini localStorage ga saqlang.",
+    question:
+      "'til' kaliti bilan 'JavaScript' qiymatini localStorage ga saqlang.",
     placeholder: "// Kodingizni shu yerga yozing",
     accepted: [
       `localStorage.setItem('til', 'JavaScript');`,
@@ -986,7 +1046,8 @@ export const questions: Question[] = [
     type: "code",
     category: "JavaScript",
     topic: "Event",
-    question: "id='tugma' elementiga click eventi qo'shing. Bosilganda konsolga 'Bosildi!' chiqsin.",
+    question:
+      "id='tugma' elementiga click eventi qo'shing. Bosilganda konsolga 'Bosildi!' chiqsin.",
     placeholder: "// Kodingizni shu yerga yozing",
     accepted: [
       `document.getElementById('tugma').addEventListener('click', () => {\n  console.log('Bosildi!');\n});`,
@@ -1002,7 +1063,8 @@ export const questions: Question[] = [
     type: "drag",
     category: "JavaScript",
     topic: "O'zgaruvchi e'loni",
-    question: "Tokenlarni to'g'ri tartibga qo'ying — o'zgaruvchi e'loni hosil qiling:",
+    question:
+      "Tokenlarni to'g'ri tartibga qo'ying — o'zgaruvchi e'loni hosil qiling:",
     tokens: [`"Jasur";`, `const`, `=`, `ism`],
     correctOrder: [`const`, `ism`, `=`, `"Jasur";`],
     hint: "const o'zgaruvchiNomi = qiymat; — e'lon qilish tartibi.",
@@ -1013,7 +1075,8 @@ export const questions: Question[] = [
     type: "drag",
     category: "JavaScript",
     topic: "localStorage",
-    question: "Tokenlarni to'g'ri tartibga qo'ying — localStorage saqlash kodini hosil qiling:",
+    question:
+      "Tokenlarni to'g'ri tartibga qo'ying — localStorage saqlash kodini hosil qiling:",
     tokens: [`'qiymat');`, `.setItem(`, `'kalit',`, `localStorage`],
     correctOrder: [`localStorage`, `.setItem(`, `'kalit',`, `'qiymat');`],
     hint: "localStorage.setItem(kalit, qiymat) tartibi.",
@@ -1024,7 +1087,8 @@ export const questions: Question[] = [
     type: "drag",
     category: "JavaScript",
     topic: "Event listener",
-    question: "Tokenlarni to'g'ri tartibga qo'ying — click event ulash kodini hosil qiling:",
+    question:
+      "Tokenlarni to'g'ri tartibga qo'ying — click event ulash kodini hosil qiling:",
     tokens: [
       `'click',`,
       `() => console.log('OK'));`,
@@ -1047,7 +1111,8 @@ export const questions: Question[] = [
     type: "fix",
     category: "JavaScript",
     topic: "Funksiya chaqiruvi",
-    question: "Quyidagi kodda xato bor. Toping va to'g'irlang:\nfunction salom() {\n  console.log(\"Salom!\");\n}\nsalom;",
+    question:
+      "Quyidagi kodda xato bor. Toping va to'g'irlang:\nfunction salom() {\n  console.log(\"Salom!\");\n}\nsalom;",
     brokenCode: `function salom() {\n  console.log("Salom!");\n}\nsalom;`,
     accepted: [`function salom() {\n  console.log("Salom!");\n}\nsalom();`],
     hint: "Funksiyani chaqirish uchun nomdan keyin () qo'shiladi: salom()",
@@ -1058,7 +1123,8 @@ export const questions: Question[] = [
     type: "fix",
     category: "JavaScript",
     topic: "O'zgaruvchi",
-    question: "Quyidagi kodda xato bor. Toping va to'g'irlang:\nconst yosh = 20;\nyosh = 25;",
+    question:
+      "Quyidagi kodda xato bor. Toping va to'g'irlang:\nconst yosh = 20;\nyosh = 25;",
     brokenCode: `const yosh = 20;\nyosh = 25;`,
     accepted: [`let yosh = 20;\nyosh = 25;`],
     hint: "const o'zgartirilmaydi. Qayta tayinlash uchun let ishlatiladi.",
