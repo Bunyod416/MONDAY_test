@@ -18,61 +18,59 @@ import {
   clearSession,
   createSession,
   getQuestionById,
+  isAnswered,
   type ExamSession,
   type SessionAnswer,
 } from "../utils/session";
 import { encodeResult } from "../utils/encoding";
+import { loadConfig, totalSelectedQuestions } from "../utils/config";
+import { verifyAdminPassword } from "../utils/auth";
+import { setExamActive } from "../utils/examLock";
 import { CATEGORIES, type Category } from "../utils/data/questions";
 
 // ─── Animatsiya stillari (global bir marta inject qilinadi) ───
+// Barcha o'tishlar `cubic-bezier(0.2,0,0,1)` — sakramaydigan, o'lchovli egri.
+// Ilgari hamma joyda `cubic-bezier(0.34,1.56,0.64,1)` ishlatilardi: u oxirida
+// oshib ketadi (overshoot) va imtihon interfeysiga o'yinchoq tusini berardi.
+const EASE = "cubic-bezier(0.2, 0, 0, 1)";
 const ANIM_STYLES = `
   @keyframes slideDown {
-    from { transform: translateY(-100%); opacity: 0; }
-    to   { transform: translateY(0);     opacity: 1; }
+    from { transform: translateY(-8px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
   }
   @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(12px); }
-    to   { opacity: 1; transform: translateY(0);    }
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0);   }
   }
   @keyframes slideUp {
-    from { transform: translateY(100%); }
-    to   { transform: translateY(0);    }
+    from { transform: translateY(12px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
   }
   @keyframes cardIn {
-    from { opacity: 0; transform: translateY(16px) scale(0.97); }
-    to   { opacity: 1; transform: translateY(0)    scale(1);    }
-  }
-  @keyframes pulseRing {
-    0%,100% { box-shadow: 0 0 0 0   rgba(0,100,0,0.15); }
-    50%      { box-shadow: 0 0 0 10px rgba(0,100,0,0);   }
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0);   }
   }
   @keyframes scaleIn {
-    from { transform: scale(0.85); opacity: 0; }
+    from { transform: scale(0.98); opacity: 0; }
     to   { transform: scale(1);    opacity: 1; }
   }
-  .anim-slide-down  { animation: slideDown 0.45s cubic-bezier(0.34,1.56,0.64,1) both; }
-  .anim-fade-up     { animation: fadeUp   0.4s  ease                              both; }
-  .anim-card-in     { animation: cardIn   0.4s  cubic-bezier(0.34,1.56,0.64,1)   both; }
-  .anim-slide-up    { animation: slideUp  0.4s  cubic-bezier(0.34,1.56,0.64,1)   both; }
-  .anim-scale-in    { animation: scaleIn  0.5s  cubic-bezier(0.34,1.56,0.64,1)   both; }
-  .anim-pulse-ring  { animation: pulseRing 2s   ease-in-out infinite; }
+  .anim-slide-down { animation: slideDown 0.28s ${EASE} both; }
+  .anim-fade-up    { animation: fadeUp    0.28s ${EASE} both; }
+  .anim-card-in    { animation: cardIn    0.24s ${EASE} both; }
+  .anim-slide-up   { animation: slideUp   0.28s ${EASE} both; }
+  .anim-scale-in   { animation: scaleIn   0.24s ${EASE} both; }
 
   /* Dots scroll bar yashirish */
   .dots-scroll { scrollbar-width: none; -ms-overflow-style: none; }
   .dots-scroll::-webkit-scrollbar { display: none; }
 
-  /* Option hover slide */
-  .option-btn { transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1),
-                            border-color 0.2s, background 0.2s, box-shadow 0.2s; }
-  .option-btn:hover { transform: translateX(5px); }
+  .tab-btn { transition: border-color 0.18s ${EASE}, color 0.18s ${EASE}; }
 
-  /* Tab transition */
-  .tab-btn { transition: border-color 0.25s, color 0.25s; }
-
-  /* Input focus ring */
+  /* Fokus halqasi — brend yashilida, jimgina */
+  .input-field { transition: border-color 0.15s ${EASE}, box-shadow 0.15s ${EASE}; }
   .input-field:focus {
-    border-color: #006400 !important;
-    box-shadow: 0 0 0 3px rgba(0,100,0,0.1);
+    border-color: #2C684F !important;
+    box-shadow: 0 0 0 3px rgba(27, 94, 63, 0.12);
     outline: none;
   }
 `;
@@ -132,19 +130,6 @@ function ExamDocIcon({ size = 32 }: { size?: number }) {
   );
 }
 
-// ─── Header corner decorators ───
-function HeaderCorners() {
-  const base = "absolute w-[18px] h-[18px] border-white/70";
-  return (
-    <>
-      <span className={`${base} top-1.5 left-1.5 border-t-[3px] border-l-[3px] rounded-tl`} />
-      <span className={`${base} top-1.5 right-1.5 border-t-[3px] border-r-[3px] rounded-tr`} />
-      <span className={`${base} bottom-1.5 left-1.5 border-b-[3px] border-l-[3px] rounded-bl`} />
-      <span className={`${base} bottom-1.5 right-1.5 border-b-[3px] border-r-[3px] rounded-br`} />
-    </>
-  );
-}
-
 const CATEGORY_META: Record<Category, { label: string; icon: React.ReactNode; color: string; bg: string; border: string }> = {
   HTML: {
     label: "HTML",
@@ -172,8 +157,9 @@ const CATEGORY_META: Record<Category, { label: string; icon: React.ReactNode; co
 type Phase = "register" | "fullscreen" | "exam" | "submitted";
 const BLOCKED_STUDENTS_KEY = "exam_blocked_students_v1";
 const ACTIVE_STUDENT_KEY = "exam_active_student_v1";
-const DEVICE_BLOCKED_KEY = "exam_device_blocked_v1";
 const MAX_VIOLATIONS = 5;
+/** Fokus yo'qolganini qoidabuzarlik deb hisoblashdan oldin kutiladigan vaqt. */
+const BLUR_GRACE_MS = 1500;
 
 function normalizeStudentName(name: string) {
   return name.trim().replace(/\s+/g, " ").toLocaleLowerCase();
@@ -183,29 +169,44 @@ function getBlockedStudents(): string[] {
   try {
     const value = localStorage.getItem(BLOCKED_STUDENTS_KEY);
     const students = value ? JSON.parse(value) : [];
-    return Array.isArray(students) ? students : [];
+    return Array.isArray(students) ? students.filter((s) => typeof s === "string") : [];
   } catch {
     return [];
   }
 }
 
+// Bloklash faqat AYNAN SHU talabaga tegishli.
+// Ilgari bir talaba bloklansa butun qurilma hamma uchun yopilardi — kompyuter
+// sinfida bu birinchi qoidabuzarlikdan keyin imtihonni to'xtatib qo'yardi.
 function blockStudent(name: string) {
   const student = normalizeStudentName(name);
   if (!student) return;
-  localStorage.setItem(DEVICE_BLOCKED_KEY, "1");
-  localStorage.setItem(ACTIVE_STUDENT_KEY, student);
-  const blocked = getBlockedStudents();
-  if (!blocked.includes(student)) {
-    localStorage.setItem(BLOCKED_STUDENTS_KEY, JSON.stringify([...blocked, student]));
+  try {
+    localStorage.setItem(ACTIVE_STUDENT_KEY, student);
+    const blocked = getBlockedStudents();
+    if (!blocked.includes(student)) {
+      localStorage.setItem(BLOCKED_STUDENTS_KEY, JSON.stringify([...blocked, student]));
+    }
+  } catch {
+    /* ignore */
   }
 }
 
 function isStudentBlocked(name: string) {
-  return getBlockedStudents().includes(normalizeStudentName(name));
+  const student = normalizeStudentName(name);
+  return student !== "" && getBlockedStudents().includes(student);
 }
 
-function isDeviceBlocked() {
-  return localStorage.getItem(DEVICE_BLOCKED_KEY) === "1" || getBlockedStudents().length > 0;
+/** O'qituvchi uchun: barcha bloklarni tozalash (parol bilan himoyalangan). */
+function clearAllBlocks() {
+  try {
+    localStorage.removeItem(BLOCKED_STUDENTS_KEY);
+    localStorage.removeItem(ACTIVE_STUDENT_KEY);
+    // Eski versiyadan qolgan "qurilma bloklandi" bayrog'i
+    localStorage.removeItem("exam_device_blocked_v1");
+  } catch {
+    /* ignore */
+  }
 }
 
 export default function ExamPage() {
@@ -215,42 +216,57 @@ export default function ExamPage() {
   const [session, setSession] = useState<ExamSession | null>(null);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [questionCounts, setQuestionCounts] = useState<Record<Category, number>>({
-    HTML: 25,
-    CSS: 25,
-    JavaScript: 25,
-  });
   const [registrationError, setRegistrationError] = useState("");
+  const [storageWarning, setStorageWarning] = useState(false);
   const [activeCategory, setActiveCategory] = useState<Category>("HTML");
   const [currentIdx, setCurrentIdx] = useState(0);
   const [fsWarning, setFsWarning] = useState(false);
   const [fsBlocked, setFsBlocked] = useState(false);
   const [downloadCountdown, setDownloadCountdown] = useState(0);
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
+  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [unlockError, setUnlockError] = useState(false);
   const fsViolations = useRef(0);
   const ignoreFullscreenChange = useRef(false);
   const backgroundViolationLock = useRef(false);
-  const autoDownloadRef = useRef(false);
+  const blurTimer = useRef<number | null>(null);
+  const autoDownloadDone = useRef(false);
+
+  // Savollar soni va imtihon davomiyligi admin panelda belgilanadi —
+  // talaba ularni o'zgartira olmaydi. useState initializer bilan bir marta
+  // o'qiladi: har render'da localStorage'ga murojaat qilish shart emas.
+  const [config] = useState(loadConfig);
 
   useEffect(() => {
     const s = loadSession();
-    const deviceBlocked = isDeviceBlocked();
     if (s) {
       setSession(s);
       fsViolations.current = s.violationCount ?? 0;
-      if (deviceBlocked || fsViolations.current >= MAX_VIOLATIONS) {
+      if (isStudentBlocked(s.studentName) || fsViolations.current >= MAX_VIOLATIONS) {
         blockStudent(s.studentName);
         setFsBlocked(true);
         setPhase("exam");
       } else if (s.submitted) setPhase("submitted");
       else setPhase("fullscreen");
-    } else if (deviceBlocked) {
-      setRegistrationError("Bu qurilma bloklangan. Qayta test topshirib bo'lmaydi.");
-    } else {
-      const activeStudent = localStorage.getItem(ACTIVE_STUDENT_KEY) ?? "";
-      if (activeStudent && isStudentBlocked(activeStudent)) {
-        setRegistrationError("Bu o'quvchi bloklangan va qayta test topshira olmaydi.");
-      }
+      return;
     }
+
+    const activeStudent = localStorage.getItem(ACTIVE_STUDENT_KEY) ?? "";
+    if (activeStudent && isStudentBlocked(activeStudent)) {
+      setRegistrationError("Bu o'quvchi bloklangan va qayta test topshira olmaydi.");
+    }
+  }, []);
+
+  // App.tsx dagi Ctrl+Shift+U admin yorlig'i imtihon vaqtida ishlamasin.
+  useEffect(() => {
+    setExamActive(phase === "exam");
+    return () => setExamActive(false);
+  }, [phase]);
+
+  /** Sessiyani saqlaydi; joy yetmasa talabani ogohlantiradi. */
+  const persist = useCallback((updated: ExamSession) => {
+    setStorageWarning(!saveSession(updated));
   }, []);
 
   const registerViolation = useCallback(() => {
@@ -263,12 +279,12 @@ export default function ExamPage() {
         pausedAt: prev.pausedAt ?? Date.now(),
       };
       if (updated.violationCount >= MAX_VIOLATIONS) blockStudent(updated.studentName);
-      saveSession(updated);
+      persist(updated);
       return updated;
     });
     if (fsViolations.current >= MAX_VIOLATIONS) setFsBlocked(true);
     else setFsWarning(true);
-  }, []);
+  }, [persist]);
 
   const registerBackgroundViolation = useCallback(() => {
     if (backgroundViolationLock.current) return;
@@ -276,27 +292,43 @@ export default function ExamPage() {
     registerViolation();
   }, [registerViolation]);
 
+  // Ctrl+H — o'qituvchi uchun blokni ochish. Endi admin paroli so'raladi:
+  // ilgari bu yorliq hech qanday tekshiruvsiz hamma bloklarni o'chirardi,
+  // ya'ni istalgan talaba o'zini blokdan chiqarib olardi.
   useEffect(() => {
-    const handleRetakeShortcut = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || event.key.toUpperCase() !== "H" || !isDeviceBlocked()) return;
+    const handleUnlockShortcut = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.key.toUpperCase() !== "H") return;
       event.preventDefault();
       event.stopPropagation();
-      localStorage.removeItem(DEVICE_BLOCKED_KEY);
-      localStorage.removeItem(BLOCKED_STUDENTS_KEY);
-      localStorage.removeItem(ACTIVE_STUDENT_KEY);
-      clearSession();
-      fsViolations.current = 0;
-      backgroundViolationLock.current = false;
-      setSession(null);
-      setFsBlocked(false);
-      setFsWarning(false);
-      setRegistrationError("");
-      setPhase("register");
+      setUnlockPassword("");
+      setUnlockError(false);
+      setUnlockOpen(true);
     };
 
-    window.addEventListener("keydown", handleRetakeShortcut, true);
-    return () => window.removeEventListener("keydown", handleRetakeShortcut, true);
+    window.addEventListener("keydown", handleUnlockShortcut, true);
+    return () => window.removeEventListener("keydown", handleUnlockShortcut, true);
   }, []);
+
+  function handleUnlockSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!verifyAdminPassword(unlockPassword)) {
+      setUnlockError(true);
+      return;
+    }
+    clearAllBlocks();
+    clearSession();
+    fsViolations.current = 0;
+    backgroundViolationLock.current = false;
+    autoDownloadDone.current = false;
+    setUnlockOpen(false);
+    setUnlockPassword("");
+    setSession(null);
+    setFsBlocked(false);
+    setFsWarning(false);
+    setRegistrationError("");
+    setStorageWarning(false);
+    setPhase("register");
+  }
 
   const onFsChange = useCallback(() => {
     if (ignoreFullscreenChange.current) {
@@ -340,12 +372,37 @@ export default function ExamPage() {
   useEffect(() => {
     if (phase !== "exam") return;
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") registerBackgroundViolation();
-      else backgroundViolationLock.current = false;
+    const cancelBlurTimer = () => {
+      if (blurTimer.current !== null) {
+        window.clearTimeout(blurTimer.current);
+        blurTimer.current = null;
+      }
     };
-    const handleWindowBlur = () => registerBackgroundViolation();
+
+    // Sahifa haqiqatan yashirilgan (boshqa tabga o'tish, minimallashtirish) —
+    // bu aniq qoidabuzarlik, darhol hisoblanadi.
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        cancelBlurTimer();
+        registerBackgroundViolation();
+      } else {
+        backgroundViolationLock.current = false;
+      }
+    };
+
+    // blur esa juda sezgir: brauzer manzil qatoriga bosish, ikkinchi monitor,
+    // bildirishnoma — bularning hammasi blur beradi. Shuning uchun darhol emas,
+    // fokus BLUR_GRACE_MS davomida qaytmasagina qoidabuzarlik deb yoziladi.
+    const handleWindowBlur = () => {
+      cancelBlurTimer();
+      blurTimer.current = window.setTimeout(() => {
+        blurTimer.current = null;
+        if (!document.hasFocus()) registerBackgroundViolation();
+      }, BLUR_GRACE_MS);
+    };
+
     const handleWindowFocus = () => {
+      cancelBlurTimer();
       backgroundViolationLock.current = false;
     };
 
@@ -353,6 +410,7 @@ export default function ExamPage() {
     window.addEventListener("blur", handleWindowBlur);
     window.addEventListener("focus", handleWindowFocus);
     return () => {
+      cancelBlurTimer();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("blur", handleWindowBlur);
       window.removeEventListener("focus", handleWindowFocus);
@@ -367,14 +425,24 @@ export default function ExamPage() {
     e.preventDefault();
     if (!firstName.trim() || !lastName.trim()) return;
     const name = `${firstName.trim()} ${lastName.trim()}`;
-    if (isDeviceBlocked() || isStudentBlocked(name)) {
-      setRegistrationError("Bu qurilma bloklangan. Qayta test topshirib bo'lmaydi.");
+    if (isStudentBlocked(name)) {
+      setRegistrationError("Bu o'quvchi bloklangan va qayta test topshira olmaydi.");
       return;
     }
-    localStorage.setItem(ACTIVE_STUDENT_KEY, normalizeStudentName(name));
+    if (totalSelectedQuestions(config) === 0) {
+      setRegistrationError(
+        "Imtihon sozlanmagan: savollar soni 0. O'qituvchiga murojaat qiling.",
+      );
+      return;
+    }
+    try {
+      localStorage.setItem(ACTIVE_STUDENT_KEY, normalizeStudentName(name));
+    } catch {
+      /* ignore */
+    }
     setRegistrationError("");
-    const s = createSession(name, questionCounts);
-    saveSession(s);
+    const s = createSession(name, config);
+    persist(s);
     setSession(s);
     setPhase("fullscreen");
   }
@@ -400,7 +468,7 @@ export default function ExamPage() {
           pausedAt: null,
           pausedDuration: prev.pausedDuration + (Date.now() - prev.pausedAt),
         };
-        saveSession(updated);
+        persist(updated);
         return updated;
       });
     }
@@ -418,7 +486,7 @@ export default function ExamPage() {
       answers: { ...session.answers, [questionId]: answer },
     };
     setSession(updated);
-    saveSession(updated);
+    persist(updated);
   }
 
   const handleSubmit = useCallback(() => {
@@ -426,13 +494,13 @@ export default function ExamPage() {
     setSession((prev) => {
       if (!prev) return prev;
       const updated: ExamSession = { ...prev, submitted: true };
-      saveSession(updated);
+      persist(updated);
       return updated;
     });
     setPhase("submitted");
     setDownloadCountdown(5);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => { });
-  }, []);
+  }, [persist]);
 
   useEffect(() => {
     if (phase !== "submitted" || downloadCountdown <= 0) return;
@@ -473,24 +541,92 @@ export default function ExamPage() {
     const fname = parts[0] || "Student";
     const lname = parts.slice(1).join("_") || "Unknown";
     const filename = `${fname}_${lname}_${ts}.txt`;
-    const blob = new Blob([encoded], { type: "text/plain" });
+    const blob = new Blob([encoded], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
+    a.style.display = "none";
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    // Ba'zi brauzerlar (Firefox) yuklashni darhol revoke qilinsa bekor qiladi —
+    // shuning uchun tozalash keyingi tick'ga qoldiriladi.
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 2000);
   }
 
   useEffect(() => {
-    if (phase !== "submitted" || !session || autoDownloadRef.current) return;
-    autoDownloadRef.current = true;
-    const timer = window.setTimeout(() => handleDownload(), 10);
+    if (phase !== "submitted" || !session || autoDownloadDone.current) return;
+    // Bayroq timeout ICHIDA qo'yiladi. Ilgari u effekt boshida qo'yilardi:
+    // StrictMode effektni ikki marta chaqirganda cleanup timerni o'chirar,
+    // ikkinchi chaqiruv esa bayroq tufayli darhol qaytar edi — natijada
+    // dev rejimda fayl umuman yuklanmasdi.
+    const timer = window.setTimeout(() => {
+      autoDownloadDone.current = true;
+      handleDownload();
+    }, 10);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, session]);
 
 
+
+  // Ctrl+H bilan ochiladigan o'qituvchi oynasi. Komponent emas, oddiy JSX
+  // o'zgaruvchisi — aks holda har render'da qayta mount bo'lib, input fokusi
+  // yo'qolib turardi.
+  const unlockModal = unlockOpen ? (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6">
+      <form
+        onSubmit={handleUnlockSubmit}
+        className="anim-scale-in w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl"
+      >
+        <h3 className="text-lg font-semibold text-gray-800">O'qituvchi kirishi</h3>
+        <p className="mt-1 mb-4 text-sm text-gray-500">
+          Bloklarni tozalash va imtihonni qaytadan boshlash uchun admin parolini kiriting.
+        </p>
+        <input
+          type="password"
+          autoFocus
+          value={unlockPassword}
+          onChange={(e) => {
+            setUnlockPassword(e.target.value);
+            setUnlockError(false);
+          }}
+          placeholder="Admin paroli"
+          className={`input-field w-full rounded-2xl border-[1.5px] px-4 py-3 text-sm text-gray-800 ${unlockError ? "border-red-400 bg-red-50" : "border-gray-200"
+            }`}
+        />
+        {unlockError && (
+          <p className="mt-1.5 text-xs font-semibold text-red-600">Noto'g'ri parol</p>
+        )}
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={() => setUnlockOpen(false)}
+            className="flex-1 rounded-2xl border-[1.5px] border-gray-200 py-3 text-sm font-semibold text-gray-600 transition-colors hover:border-gray-300"
+          >
+            Bekor qilish
+          </button>
+          <button
+            type="submit"
+            className="flex-1 rounded-2xl bg-green-700 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-800"
+          >
+            Blokni ochish
+          </button>
+        </div>
+      </form>
+    </div>
+  ) : null;
+
+  // localStorage yozib bo'lmasa (kvota to'lgan / private rejim) talaba buni
+  // BILISHI kerak — aks holda javoblari jimgina yo'qoladi.
+  const storageBanner = storageWarning ? (
+    <div className="bg-red-600 px-4 py-2 text-center text-xs font-semibold text-white">
+      ⚠️ Javoblaringizni brauzer xotirasiga saqlab bo'lmayapti. Sahifani yangilamang!
+    </div>
+  ) : null;
 
   // ════════════════════════════════════════════════════════
   // REGISTER
@@ -499,13 +635,12 @@ export default function ExamPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         {/* Header */}
-        <div className="bg-[#006400] text-white py-3 px-6 relative overflow-hidden anim-slide-down">
-          <HeaderCorners />
+        <div className="bg-green-700 text-white py-3 px-6 relative overflow-hidden anim-slide-down">
           <div className="text-center">
-            <h1 className="text-[clamp(13px,3.5vw,18px)] font-bold tracking-widest uppercase">
+            <h1 className="text-[clamp(13px,3.5vw,18px)] font-semibold tracking-wide">
               Web Development — Final Exam
             </h1>
-            <p className="text-green-200 text-xs mt-0.5">Talaba ma'lumotlarini kiriting</p>
+            <p className="text-green-100 text-xs mt-0.5">Talaba ma'lumotlarini kiriting</p>
           </div>
         </div>
 
@@ -513,10 +648,10 @@ export default function ExamPage() {
           <div className="anim-card-in bg-white rounded-3xl shadow-lg border border-green-100 w-full max-w-md p-6 sm:p-8">
             {/* Icon */}
             <div className="text-center mb-6">
-              <div className="anim-pulse-ring w-16 h-16 rounded-full bg-green-50 border-2 border-[#006400] flex items-center justify-center mx-auto mb-4 text-[#006400]">
+              <div className="w-14 h-14 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center mx-auto mb-4 text-green-700">
                 <ExamDocIcon size={30} />
               </div>
-              <h2 className="text-2xl font-bold text-gray-800">Ro'yxatdan o'tish</h2>
+              <h2 className="text-2xl font-semibold text-gray-800">Ro'yxatdan o'tish</h2>
               <p className="text-gray-500 text-sm mt-1">Imtihon 3 bo'lim: HTML • CSS • JavaScript</p>
             </div>
 
@@ -536,34 +671,24 @@ export default function ExamPage() {
               })}
             </div>
 
+            {/* Savollar soni endi FAQAT admin panelda belgilanadi — bu yerda
+                shunchaki ko'rsatiladi, talaba o'zgartira olmaydi. */}
             <div className="mb-6 rounded-2xl border border-green-100 bg-green-50/50 p-4">
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-bold text-gray-800">Savollar sonini tanlang</h3>
-                <span className="text-xs font-semibold text-gray-500">Min: 0 · Max: 25</span>
+                <h3 className="text-sm font-semibold text-gray-800">Imtihon tarkibi</h3>
+                <span className="text-xs font-semibold text-gray-500">
+                  {config.durationMinutes} daqiqa
+                </span>
               </div>
               <div className="grid grid-cols-3 gap-2">
-                {CATEGORIES.map((cat) => {
-                  const count = questionCounts[cat];
-                  return (
-                    <label key={cat} className="text-center">
-                      <span className="mb-1.5 block text-xs font-bold text-gray-600">{cat === "JavaScript" ? "JS" : cat}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={25}
-                        value={count}
-                        onChange={(event) => {
-                          const value = Number(event.target.value);
-                          setQuestionCounts((previous) => ({
-                            ...previous,
-                            [cat]: Number.isFinite(value) ? Math.max(0, Math.min(25, value)) : 0,
-                          }));
-                        }}
-                        className="input-field w-full rounded-xl border-[1.5px] border-gray-200 bg-white px-2 py-2.5 text-center text-sm font-bold text-gray-800"
-                      />
-                    </label>
-                  );
-                })}
+                {CATEGORIES.map((cat) => (
+                  <div key={cat} className="rounded-xl border-[1.5px] border-gray-200 bg-white px-2 py-2.5 text-center">
+                    <span className="mb-1 block text-xs font-semibold text-gray-600">
+                      {cat === "JavaScript" ? "JS" : cat}
+                    </span>
+                    <span className="text-sm font-semibold text-gray-800">{config.counts[cat]}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -576,7 +701,7 @@ export default function ExamPage() {
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="Ismingizni kiriting"
                   required
-                  className="input-field w-full border-[1.5px] border-gray-200 rounded-2xl px-4 py-3 text-gray-800 transition-all text-sm"
+                  className="input-field w-full border-[1.5px] border-gray-200 rounded-2xl px-4 py-3 text-gray-800 transition-colors text-sm"
                 />
               </div>
               <div>
@@ -587,14 +712,14 @@ export default function ExamPage() {
                   onChange={(e) => setLastName(e.target.value)}
                   placeholder="Familiyangizni kiriting"
                   required
-                  className="input-field w-full border-[1.5px] border-gray-200 rounded-2xl px-4 py-3 text-gray-800 transition-all text-sm"
+                  className="input-field w-full border-[1.5px] border-gray-200 rounded-2xl px-4 py-3 text-gray-800 transition-colors text-sm"
                 />
               </div>
 
               <div className="bg-green-50 border border-green-100 rounded-2xl p-3.5 text-xs text-green-800 space-y-1">
-                <p className="font-bold text-[13px]">⚠️ Muhim eslatmalar:</p>
+                <p className="font-semibold text-[13px]">⚠️ Muhim eslatmalar:</p>
                 <p>• Imtihon to'liq ekranda o'tkaziladi</p>
-                <p>• 5 ta qoidabuzarlikdan keyin qurilma bloklanadi</p>
+                <p>• {MAX_VIOLATIONS} ta qoidabuzarlikdan keyin imtihon bloklanadi</p>
                 <p>• Har bir qoidabuzarlik uchun 1 ball jarima olinadi</p>
                 <p>• Sahifa yangilansa ham javoblaringiz saqlanadi</p>
               </div>
@@ -607,13 +732,14 @@ export default function ExamPage() {
 
               <button
                 type="submit"
-                className="w-full bg-[#006400] hover:bg-green-800 active:scale-[0.98] text-white font-bold py-3.5 rounded-2xl transition-all duration-200 text-sm tracking-wide uppercase shadow-sm hover:shadow-md"
+                className="w-full bg-green-700 hover:bg-green-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm shadow-sm hover:shadow-md"
               >
                 Imtihonni Boshlash
               </button>
             </form>
           </div>
         </div>
+        {unlockModal}
       </div>
     );
   }
@@ -623,12 +749,12 @@ export default function ExamPage() {
   // ════════════════════════════════════════════════════════
   if (phase === "fullscreen") {
     return (
-      <div className="min-h-screen bg-[#006400] flex flex-col items-center justify-center p-6">
+      <div className="min-h-screen bg-green-700 flex flex-col items-center justify-center p-6">
         <div className="anim-scale-in bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 text-center">
-          <div className="anim-pulse-ring w-20 h-20 rounded-full bg-green-50 border-[3px] border-[#006400] flex items-center justify-center mx-auto mb-6 text-[#006400]">
+          <div className="w-16 h-16 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center mx-auto mb-6 text-green-700">
             <Maximize size={34} />
           </div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">To'liq Ekran Rejimi</h2>
+          <h2 className="text-2xl font-semibold text-gray-800 mb-2">To'liq Ekran Rejimi</h2>
           <p className="text-gray-600 text-sm mb-2">
             Salom, <strong>{session?.studentName}</strong>!
           </p>
@@ -637,11 +763,12 @@ export default function ExamPage() {
           </p>
           <button
             onClick={handleStartExam}
-            className="w-full bg-[#006400] hover:bg-green-800 active:scale-[0.98] text-white font-bold py-4 rounded-2xl transition-all duration-200 text-sm tracking-wide uppercase shadow-sm hover:shadow-md"
+            className="w-full bg-green-700 hover:bg-green-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm shadow-sm hover:shadow-md"
           >
             To'liq Ekranga Kirish va Boshlash
           </button>
         </div>
+        {unlockModal}
       </div>
     );
   }
@@ -653,10 +780,10 @@ export default function ExamPage() {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
         <div className="anim-scale-in bg-white rounded-3xl shadow-lg border border-green-100 w-full max-w-md p-8 text-center">
-          <div className="anim-pulse-ring w-20 h-20 rounded-full bg-green-50 border-[3px] border-[#006400] flex items-center justify-center mx-auto mb-6 text-[#006400]">
+          <div className="w-16 h-16 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center mx-auto mb-6 text-green-700">
             <CheckCircle size={34} />
           </div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Imtihon Topshirildi!</h2>
+          <h2 className="text-2xl font-semibold text-gray-800 mb-2">Imtihon Topshirildi!</h2>
           <p className="text-gray-600 text-sm mb-2">
             <strong>{session?.studentName}</strong>
           </p>
@@ -666,7 +793,7 @@ export default function ExamPage() {
           <div className="space-y-3">
             <button
               onClick={handleDownload}
-              className="w-full flex items-center justify-center gap-2 bg-[#006400] hover:bg-green-800 active:scale-[0.98] text-white font-bold py-3.5 rounded-2xl transition-all duration-200 text-sm shadow-sm hover:shadow-md"
+              className="w-full flex items-center justify-center gap-2 bg-green-700 hover:bg-green-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm shadow-sm hover:shadow-md"
             >
               <Download size={17} />
               Natijani Yuklab Olish
@@ -674,6 +801,7 @@ export default function ExamPage() {
 
           </div>
         </div>
+        {unlockModal}
       </div>
     );
   }
@@ -687,19 +815,15 @@ export default function ExamPage() {
   const currentQuestionId = catIds[currentIdx];
   const currentQ = currentQuestionId != null ? getQuestionById(currentQuestionId) : null;
 
+  const activeSession = session;
+
   function catAnsweredCount(cat: Category): number {
-    const ids = session!.categoryOrder[cat] ?? [];
-    return ids.filter((id) => {
-      const a = session!.answers[id];
-      if (!a) return false;
-      if (a.type === "mcq" || a.type === "truefalse") return a.selected !== null;
-      if (a.type === "code" || a.type === "fix") return a.value.trim().length > 0;
-      return a.order.length > 0;
-    }).length;
+    const ids = activeSession.categoryOrder[cat] ?? [];
+    return ids.filter((id) => isAnswered(activeSession.answers[id])).length;
   }
 
   function catTotalCount(cat: Category): number {
-    return (session!.categoryOrder[cat] ?? []).length;
+    return (activeSession.categoryOrder[cat] ?? []).length;
   }
 
   const totalAnswered = CATEGORIES.reduce((s, c) => s + catAnsweredCount(c), 0);
@@ -713,16 +837,30 @@ export default function ExamPage() {
 
   const meta = CATEGORY_META[activeCategory];
 
+  // Sarlavhadagi raqamlar endi haqiqiy sessiyadan olinadi —
+  // ilgari "30 savol • 120 ball" deb qattiq yozilgan edi.
+  const selectedTotalPoints = CATEGORIES.reduce(
+    (sum, cat) =>
+      sum +
+      (activeSession.categoryOrder[cat] ?? []).reduce(
+        (s, id) => s + (getQuestionById(id)?.points ?? 0),
+        0,
+      ),
+    0,
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      {storageBanner}
+      {unlockModal}
 
       {/* ── Fullscreen blocked ── */}
       {fsBlocked && (
         <div className="fixed inset-0 z-50 bg-red-700 flex flex-col items-center justify-center text-white p-8 text-center">
           <AlertTriangle size={60} className="mb-4" />
-          <h2 className="text-2xl sm:text-3xl font-bold mb-3">Imtihon Bloklab Qo'yildi</h2>
+          <h2 className="text-2xl sm:text-3xl font-semibold mb-3">Imtihon Bloklab Qo'yildi</h2>
           <p className="text-red-200 text-base max-w-sm">
-            5 ta qoidabuzarlik qayd etildi. Bu qurilmada qayta test topshirib bo'lmaydi.
+            {MAX_VIOLATIONS} ta qoidabuzarlik qayd etildi. Blokni faqat o'qituvchi ocha oladi.
           </p>
         </div>
       )}
@@ -731,7 +869,7 @@ export default function ExamPage() {
       {fsWarning && !fsBlocked && (
         <div className="fixed inset-0 z-40 bg-black/80 flex flex-col items-center justify-center text-white p-8 text-center">
           <AlertTriangle size={52} className="mb-4 text-yellow-400" />
-          <h2 className="text-xl sm:text-2xl font-bold mb-2">
+          <h2 className="text-xl sm:text-2xl font-semibold mb-2">
             To'liq Ekrandan Chiqdingiz!
           </h2>
           <p className="text-gray-300 mb-1 text-sm">Ogohlantirish: {fsViolations.current}/{MAX_VIOLATIONS}</p>
@@ -740,7 +878,7 @@ export default function ExamPage() {
           </p>
           <button
             onClick={handleViolationAction}
-            className="bg-[#006400] hover:bg-green-700 text-white font-bold px-8 py-3.5 rounded-2xl transition-all duration-200 active:scale-[0.98]"
+            className="bg-green-700 hover:bg-green-800 text-white font-semibold px-8 py-3.5 rounded-2xl transition-colors"
           >
             To'liq Ekranga Qaytish
           </button>
@@ -749,13 +887,18 @@ export default function ExamPage() {
 
       {/* ── Header ── */}
       <div className="anim-slide-down">
-        <ExamHeader studentName={session.studentName} />
+        <ExamHeader
+          studentName={session.studentName}
+          totalQuestions={totalAll}
+          totalPoints={selectedTotalPoints}
+        />
       </div>
 
       {/* ── Timer bar ── */}
       <div className="anim-fade-up bg-white border-b border-gray-100 px-4 py-2 flex justify-end" style={{ animationDelay: "0.1s" }}>
         <Timer
           startTime={session.startTime}
+          durationMinutes={session.durationMinutes}
           pausedAt={session.pausedAt}
           pausedDuration={session.pausedDuration}
           onTimeUp={handleSubmit}
@@ -777,21 +920,21 @@ export default function ExamPage() {
                   key={cat}
                   onClick={() => switchCategory(cat)}
                   className={`tab-btn flex-1 flex flex-col items-center py-2.5 sm:py-3 px-1 border-b-[3px] text-[11px] sm:text-xs font-semibold gap-1 min-w-0 ${active
-                    ? "border-[#006400] text-[#006400]"
+                    ? "border-green-700 text-green-700"
                     : "border-transparent text-gray-400 hover:text-gray-600"
                     }`}
                 >
                   {/* Icon + label — icon only on tiny screens */}
-                  <span className={`flex items-center gap-1 sm:gap-1.5 ${active ? "text-[#006400]" : ""}`}>
-                    <span className={active ? "text-[#006400]" : m.color}>{m.icon}</span>
+                  <span className={`flex items-center gap-1 sm:gap-1.5 ${active ? "text-green-700" : ""}`}>
+                    <span className={active ? "text-green-700" : m.color}>{m.icon}</span>
                     <span className="hidden xs:inline sm:inline">{m.label}</span>
                     {/* Fallback: show on all screens but truncate */}
                     <span className="xs:hidden sm:hidden truncate max-w-[40px]">{m.label}</span>
                   </span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${allDone
-                    ? "bg-green-100 text-[#006400]"
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${allDone
+                    ? "bg-green-100 text-green-700"
                     : active
-                      ? "bg-green-50 text-[#006400]"
+                      ? "bg-green-50 text-green-700"
                       : "bg-gray-100 text-gray-500"
                     }`}>
                     {answered}/{total}
@@ -810,10 +953,10 @@ export default function ExamPage() {
           </div>
           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div
-              className="h-full rounded-full transition-all duration-500"
+              className="h-full rounded-full transition-[width] duration-300"
               style={{
                 width: `${progressPct}%`,
-                background: "linear-gradient(90deg, #006400, #4caf50)",
+                background: "#2C684F",
               }}
             />
           </div>
@@ -824,9 +967,11 @@ export default function ExamPage() {
       <div className={`border-b ${meta.bg} ${meta.border} py-2 px-4`}>
         <div className="max-w-3xl mx-auto flex items-center gap-2">
           <span className={meta.color}>{meta.icon}</span>
-          <span className={`text-sm font-bold ${meta.color}`}>{CATEGORY_META[activeCategory].label === "JS" ? "JavaScript" : meta.label} Bo'limi</span>
+          <span className={`text-sm font-semibold ${meta.color}`}>{CATEGORY_META[activeCategory].label === "JS" ? "JavaScript" : meta.label} Bo'limi</span>
           <span className="text-xs text-gray-400 ml-auto">
-            Savol {currentIdx + 1} / {catIds.length}
+            {catIds.length === 0
+              ? "Bu bo'limda savol yo'q"
+              : `Savol ${currentIdx + 1} / ${catIds.length}`}
           </span>
         </div>
       </div>
@@ -856,8 +1001,10 @@ export default function ExamPage() {
                 questionNumber={currentIdx + 1}
                 currentOrder={session.answers[currentQ.id]?.type === "dragdrop"
                   ? (session.answers[currentQ.id] as { type: "dragdrop"; order: number[] }).order
-                  : currentQ.tokens.map((_, i) => i)}
-                onReorder={(order) => updateAnswer(currentQ.id, { type: "dragdrop", order })}
+                  : session.dragOrders[currentQ.id] ?? currentQ.tokens.map((_, i) => i)}
+                onReorder={(order) =>
+                  updateAnswer(currentQ.id, { type: "dragdrop", order, touched: true })
+                }
               />
             </div>
           ) : currentQ ? (
@@ -881,7 +1028,7 @@ export default function ExamPage() {
           <button
             onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}
             disabled={currentIdx === 0}
-            className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 border-[1.5px] border-gray-200 rounded-2xl text-sm font-semibold text-gray-600 disabled:opacity-35 hover:border-[#006400] hover:text-[#006400] transition-all duration-200 active:scale-[0.97] whitespace-nowrap"
+            className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 border-[1.5px] border-gray-200 rounded-2xl text-sm font-semibold text-gray-600 disabled:opacity-35 hover:border-green-700 hover:text-green-700 transition-colors whitespace-nowrap"
           >
             <ChevronLeft size={15} />
             <span className="hidden sm:inline">Oldingi</span>
@@ -890,23 +1037,16 @@ export default function ExamPage() {
           {/* Dots */}
           <div className="flex-1 flex items-center justify-center gap-1 dots-scroll overflow-x-auto py-1">
             {catIds.map((id, i) => {
-              const ans = session.answers[id];
-              const isAnswered = ans
-                ? ans.type === "mcq" || ans.type === "truefalse"
-                  ? ans.selected !== null
-                  : ans.type === "code" || ans.type === "fix"
-                    ? ans.value.trim().length > 0
-                    : ans.order.length > 0
-                : false;
+              const answered = isAnswered(session.answers[id]);
               const isActive = i === currentIdx;
               return (
                 <button
                   key={id}
                   onClick={() => setCurrentIdx(i)}
-                  className={`flex-shrink-0 w-7 h-7 rounded-full text-[11px] font-bold transition-all duration-200 active:scale-90 ${isActive
-                    ? "bg-[#006400] text-white scale-110 shadow-sm"
-                    : isAnswered
-                      ? "bg-green-100 text-[#006400] border-[1.5px] border-green-300"
+                  className={`flex-shrink-0 w-7 h-7 rounded-full text-[11px] font-semibold transition-colors ${isActive
+                    ? "bg-green-700 text-white shadow-sm"
+                    : answered
+                      ? "bg-green-100 text-green-700 border-[1.5px] border-green-300"
                       : "bg-gray-100 text-gray-500 border-[1.5px] border-gray-200"
                     }`}
                 >
@@ -920,7 +1060,7 @@ export default function ExamPage() {
           {currentIdx < catIds.length - 1 ? (
             <button
               onClick={() => setCurrentIdx((i) => Math.min(catIds.length - 1, i + 1))}
-              className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 bg-[#006400] hover:bg-green-800 rounded-2xl text-sm font-semibold text-white transition-all duration-200 active:scale-[0.97] whitespace-nowrap shadow-sm"
+              className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 bg-green-700 hover:bg-green-800 rounded-2xl text-sm font-semibold text-white transition-colors whitespace-nowrap shadow-sm"
             >
               <span className="hidden sm:inline">Keyingi</span>
               <ChevronRight size={15} />
@@ -931,7 +1071,7 @@ export default function ExamPage() {
                 const nextCat = CATEGORIES[CATEGORIES.indexOf(activeCategory) + 1];
                 switchCategory(nextCat);
               }}
-              className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 bg-[#006400] hover:bg-green-800 rounded-2xl text-sm font-semibold text-white transition-all duration-200 active:scale-[0.97] whitespace-nowrap shadow-sm"
+              className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 bg-green-700 hover:bg-green-800 rounded-2xl text-sm font-semibold text-white transition-colors whitespace-nowrap shadow-sm"
             >
               <span className="hidden sm:inline">Keyingi Bo'lim</span>
               <span className="sm:hidden">Bo'lim</span>
@@ -939,8 +1079,8 @@ export default function ExamPage() {
             </button>
           ) : (
             <button
-              onClick={handleSubmit}
-              className="flex-shrink-0 flex items-center gap-1.5 px-4 sm:px-5 py-2.5 bg-[#006400] hover:bg-green-800 rounded-2xl text-sm font-bold text-white transition-all duration-200 active:scale-[0.97] whitespace-nowrap shadow-sm"
+              onClick={() => setConfirmSubmit(true)}
+              className="flex-shrink-0 flex items-center gap-1.5 px-4 sm:px-5 py-2.5 bg-green-700 hover:bg-green-800 rounded-2xl text-sm font-semibold text-white transition-colors whitespace-nowrap shadow-sm"
             >
               <CheckCircle size={15} />
               Topshirish
@@ -948,6 +1088,69 @@ export default function ExamPage() {
           )}
         </div>
       </div>
+
+      {/* Topshirish tugmasi ilgari FAQAT JS bo'limining oxirgi savolida
+          chiqardi — JS'ni yechmoqchi bo'lmagan talaba ham butun bo'limni
+          bosib o'tishga majbur edi. Endi u doim qo'l ostida. */}
+      <button
+        onClick={() => setConfirmSubmit(true)}
+        className="fixed right-3 top-3 z-30 flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white/95 px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm backdrop-blur transition-colors hover:border-green-700 hover:text-green-700 sm:right-4"
+      >
+        <CheckCircle size={13} />
+        Imtihonni yakunlash
+      </button>
+
+      {confirmSubmit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
+          <div className="anim-scale-in w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-gray-900">Imtihonni yakunlaysizmi?</h3>
+
+            {totalAnswered < totalAll ? (
+              <p className="mt-2 text-sm leading-relaxed text-gray-600">
+                <strong className="text-red-700">{totalAll - totalAnswered} ta savol</strong> javobsiz
+                qoladi va ular uchun ball berilmaydi.
+              </p>
+            ) : (
+              <p className="mt-2 text-sm text-gray-600">Barcha savollarga javob berdingiz.</p>
+            )}
+
+            <div className="mt-3 space-y-1.5 rounded-lg bg-gray-50 p-3 text-xs">
+              {CATEGORIES.map((cat) => {
+                const answered = catAnsweredCount(cat);
+                const total = catTotalCount(cat);
+                if (total === 0) return null;
+                return (
+                  <div key={cat} className="flex items-center justify-between">
+                    <span className="text-gray-600">{cat}</span>
+                    <span className={answered === total ? "font-medium text-green-700" : "font-medium text-gray-500"}>
+                      {answered}/{total}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="mt-3 text-xs text-gray-500">
+              Yakunlangandan keyin javoblarni o'zgartirib bo'lmaydi.
+            </p>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => setConfirmSubmit(false)}
+                className="flex-1 rounded-lg border border-gray-300 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+              >
+                Davom etish
+              </button>
+              <button
+                onClick={() => { setConfirmSubmit(false); handleSubmit(); }}
+                className="flex-1 rounded-lg bg-green-700 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-green-800"
+              >
+                Ha, yakunlash
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,40 +3,56 @@ import { Clock, AlertTriangle } from "lucide-react";
 
 interface TimerProps {
   startTime: number;
+  /** Imtihon davomiyligi — admin panelda sozlanadi (ilgari 60 daqiqa qattiq yozilgan edi). */
+  durationMinutes: number;
   pausedAt: number | null;
   pausedDuration: number;
   onTimeUp: () => void;
 }
 
-export default memo(function Timer({ startTime, pausedAt, pausedDuration, onTimeUp }: TimerProps) {
-  const TOTAL_MS = 60 * 60 * 1000; // 60 minutes
+export default memo(function Timer({
+  startTime,
+  durationMinutes,
+  pausedAt,
+  pausedDuration,
+  onTimeUp,
+}: TimerProps) {
+  const totalMs = durationMinutes * 60 * 1000;
+
   const getRemaining = () => {
     const currentPause = pausedAt === null ? 0 : Date.now() - pausedAt;
     const elapsed = Date.now() - startTime - pausedDuration - currentPause;
-    return Math.max(0, TOTAL_MS - elapsed);
+    return Math.max(0, totalMs - elapsed);
   };
 
-  // Initial remaining hisoblash (sahifa qayta yuklansa ham to'g'ri ko'rsatadi)
+  // Boshlang'ich qiymat funksiya orqali — sahifa qayta yuklansa ham to'g'ri.
   const [remaining, setRemaining] = useState(getRemaining);
 
   const calledRef = useRef(false);
   const onTimeUpRef = useRef(onTimeUp);
   onTimeUpRef.current = onTimeUp;
 
+  const getRemainingRef = useRef(getRemaining);
+  getRemainingRef.current = getRemaining;
+
   useEffect(() => {
-    setRemaining(getRemaining());
+    // Vaqtni HOZIR qayta hisoblaymiz. Ilgari bu yerda state'dagi eski
+    // `remaining` qiymati tekshirilardi — bir render orqada qolgan qiymat.
+    const now = getRemainingRef.current();
+    setRemaining(now);
 
     if (pausedAt !== null) return;
 
-    // Agar vaqt allaqachon tugagan bo'lsa
-    if (remaining === 0 && !calledRef.current) {
-      calledRef.current = true;
-      onTimeUpRef.current();
+    if (now === 0) {
+      if (!calledRef.current) {
+        calledRef.current = true;
+        onTimeUpRef.current();
+      }
       return;
     }
 
     const interval = setInterval(() => {
-      const remainingMs = getRemaining();
+      const remainingMs = getRemainingRef.current();
       setRemaining(remainingMs);
 
       if (remainingMs === 0 && !calledRef.current) {
@@ -47,24 +63,27 @@ export default memo(function Timer({ startTime, pausedAt, pausedDuration, onTime
     }, 1000);
 
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startTime, pausedAt, pausedDuration]);
+  }, [startTime, pausedAt, pausedDuration, totalMs]);
 
-  const minutes = Math.floor(remaining / 60000);
-  const seconds = Math.floor((remaining % 60000) / 1000);
-  const isLowTime = remaining > 0 && remaining < 5 * 60 * 1000; // 5 daqiqadan kam
+  const totalSeconds = Math.floor(remaining / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const isLowTime = remaining > 0 && remaining < 5 * 60 * 1000;
 
-  const timeString = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  const timeString =
+    hours > 0
+      ? `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
+      : `${minutes}:${seconds.toString().padStart(2, "0")}`;
 
   return (
     <div
-      className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-all ${isLowTime
-          ? "bg-red-100 text-red-700 animate-pulse"
-          : "bg-blue-50 text-blue-700"
+      className={`flex items-center gap-2 rounded-lg px-3 py-1.5 font-mono text-sm font-medium tabular-nums transition-colors ${isLowTime
+        ? "bg-red-50 text-red-700 ring-1 ring-red-200"
+        : "bg-gray-100 text-gray-700"
         }`}
     >
-      {isLowTime && <AlertTriangle size={16} />}
-      {!isLowTime && <Clock size={16} />}
+      {isLowTime ? <AlertTriangle size={16} /> : <Clock size={16} />}
       <span>{timeString}</span>
     </div>
   );

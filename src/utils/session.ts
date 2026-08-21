@@ -5,69 +5,124 @@ import {
   type Question,
   type Category,
 } from "./data/questions";
+import type { ExamConfig } from "./config";
 
-const COOKIE_NAME = "exam_session_v4";
-const COOKIE_DAYS = 1;
+// v5: cookie o'rniga localStorage.
+// Sabab: to'liq sessiya (75 savol javoblari + variant tartiblari) JSON'da
+// ~4.6KB, encodeURIComponent'dan keyin ~8.2KB bo'ladi. Cookie limiti ~4KB —
+// brauzer uni jimgina tashlab yuborardi va talabaning javoblari yo'qolardi.
+const STORAGE_KEY = "exam_session_v5";
+const LEGACY_COOKIE = "exam_session_v4";
 
 export type SessionAnswer =
   | { type: "mcq"; selected: number | null }
   | { type: "truefalse"; selected: boolean | null }
   | { type: "code"; value: string }
   | { type: "fix"; value: string }
-  | { type: "dragdrop"; order: number[] };
+  | { type: "dragdrop"; order: number[]; touched: boolean };
 
 export type ExamSession = {
   studentName: string;
   startTime: number;
+  durationMinutes: number;
   violationCount: number;
   pausedAt: number | null;
   pausedDuration: number;
-  // Per-category: shuffled list of question IDs (not array indices)
+  /** Har bo'lim uchun: aralashtirilgan savol ID lari (indeks emas) */
   categoryOrder: Record<Category, number[]>;
   optionOrders: Record<number, number[]>;
   dragOrders: Record<number, number[]>;
-  // answers keyed by question id
+  /** savol ID si bo'yicha javoblar */
   answers: Record<number, SessionAnswer>;
   submitted: boolean;
 };
 
-function setCookie(value: string) {
-  const expires = new Date();
-  expires.setTime(expires.getTime() + COOKIE_DAYS * 24 * 60 * 60 * 1000);
-  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(value)};expires=${expires.toUTCString()};path=/;SameSite=Strict`;
-}
-
-function getCookie(): string | null {
-  const match = document.cookie
-    .split(";")
-    .map((c) => c.trim())
-    .find((c) => c.startsWith(`${COOKIE_NAME}=`));
-  if (!match) return null;
-  return decodeURIComponent(match.slice(COOKIE_NAME.length + 1));
-}
-
 export function clearSession() {
-  document.cookie = `${COOKIE_NAME}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;`;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+  // Eski cookie qolib ketmasin
+  document.cookie = `${LEGACY_COOKIE}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;`;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Saqlangan sessiyani o'qiydi va TO'LIQ tekshiradi.
+ * Buzilgan yoki eski formatdagi ma'lumot oq ekranga olib kelmasligi kerak —
+ * shuning uchun har bir maydon alohida validatsiya qilinadi.
+ */
 export function loadSession(): ExamSession | null {
-  const raw = getCookie();
-  if (!raw) return null;
+  let raw: string | null = null;
   try {
-    const session = JSON.parse(raw) as Partial<ExamSession>;
+    raw = localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return null;
+    if (typeof parsed.studentName !== "string" || !parsed.studentName) return null;
+    if (typeof parsed.startTime !== "number" || !Number.isFinite(parsed.startTime)) return null;
+    if (!isRecord(parsed.answers)) return null;
+    if (!isRecord(parsed.categoryOrder)) return null;
+
+    const knownIds = new Set(questions.map((q) => q.id));
+    const categoryOrder = {} as Record<Category, number[]>;
+    for (const cat of CATEGORIES) {
+      const ids = parsed.categoryOrder[cat];
+      // Datadan olib tashlangan savol ID lari filtrlanadi
+      categoryOrder[cat] = Array.isArray(ids)
+        ? ids.filter((id): id is number => typeof id === "number" && knownIds.has(id))
+        : [];
+    }
+
+    const answers: Record<number, SessionAnswer> = {};
+    for (const [key, value] of Object.entries(parsed.answers)) {
+      const id = Number(key);
+      if (!knownIds.has(id) || !isRecord(value)) continue;
+      answers[id] = value as unknown as SessionAnswer;
+    }
+
     return {
-      ...session,
-      violationCount: session.violationCount ?? 0,
-      pausedAt: session.pausedAt ?? null,
-      pausedDuration: session.pausedDuration ?? 0,
-    } as ExamSession;
+      studentName: parsed.studentName,
+      startTime: parsed.startTime,
+      durationMinutes:
+        typeof parsed.durationMinutes === "number" && parsed.durationMinutes > 0
+          ? parsed.durationMinutes
+          : 60,
+      violationCount: typeof parsed.violationCount === "number" ? parsed.violationCount : 0,
+      pausedAt: typeof parsed.pausedAt === "number" ? parsed.pausedAt : null,
+      pausedDuration: typeof parsed.pausedDuration === "number" ? parsed.pausedDuration : 0,
+      categoryOrder,
+      optionOrders: isRecord(parsed.optionOrders)
+        ? (parsed.optionOrders as Record<number, number[]>)
+        : {},
+      dragOrders: isRecord(parsed.dragOrders)
+        ? (parsed.dragOrders as Record<number, number[]>)
+        : {},
+      answers,
+      submitted: parsed.submitted === true,
+    };
   } catch {
     return null;
   }
 }
 
-export function saveSession(session: ExamSession) {
-  setCookie(JSON.stringify(session));
+/** Saqlash muvaffaqiyatli bo'lsa true qaytaradi (kvota to'lishi mumkin). */
+export function saveSession(session: ExamSession): boolean {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function shuffleArray<T>(arr: T[]): T[] {
@@ -79,25 +134,43 @@ function shuffleArray<T>(arr: T[]): T[] {
   return a;
 }
 
+/** Boshlang'ich tartib tasodifan to'g'ri javob bo'lib qolmasligi uchun. */
+function shuffleAwayFrom(indices: number[], forbidden: number[]): number[] {
+  if (indices.length < 2) return [...indices];
+  const target = JSON.stringify(forbidden);
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const candidate = shuffleArray(indices);
+    if (JSON.stringify(candidate) !== target) return candidate;
+  }
+  // Deyarli imkonsiz — baribir ikki elementni almashtirib qo'yamiz
+  const fallback = [...indices];
+  [fallback[0], fallback[1]] = [fallback[1], fallback[0]];
+  return fallback;
+}
+
 export function createSession(
   studentName: string,
-  questionCounts: Record<Category, number>,
+  config: ExamConfig,
 ): ExamSession {
-  const categoryOrder: Record<string, number[]> = {};
+  const categoryOrder = {} as Record<Category, number[]>;
   const optionOrders: Record<number, number[]> = {};
   const dragOrders: Record<number, number[]> = {};
   const answers: Record<number, SessionAnswer> = {};
 
   for (const cat of CATEGORIES) {
-    const qs = getByCategory(cat);
-    const count = Math.max(
-      0,
-      Math.min(qs.length, Math.floor(questionCounts[cat] ?? qs.length)),
-    );
-    categoryOrder[cat] = shuffleArray(qs.map((q) => q.id)).slice(0, count);
+    const pool = getByCategory(cat);
+    const count = Math.max(0, Math.min(pool.length, Math.floor(config.counts[cat] ?? 0)));
+    categoryOrder[cat] = shuffleArray(pool.map((q) => q.id)).slice(0, count);
   }
 
+  // FAQAT tanlangan savollar uchun holat yaratiladi.
+  // Ilgari 75 ta savolning hammasi uchun yaratilardi — saqlash hajmi shundan
+  // keraksiz 3-4 barobar oshib ketardi.
+  const selectedIds = new Set(CATEGORIES.flatMap((cat) => categoryOrder[cat]));
+
   for (const q of questions) {
+    if (!selectedIds.has(q.id)) continue;
+
     if (q.type === "mcq") {
       optionOrders[q.id] = shuffleArray(q.options.map((_, i) => i));
       answers[q.id] = { type: "mcq", selected: null };
@@ -106,19 +179,24 @@ export function createSession(
     } else if (q.type === "code" || q.type === "fix") {
       answers[q.id] = { type: q.type, value: "" };
     } else if (q.type === "drag") {
-      const order = q.tokens.map((_, i) => i);
-      answers[q.id] = { type: "dragdrop", order };
+      // Tokenlar endi haqiqatan aralashtiriladi — ilgari dragOrders
+      // hisoblanardi-yu, hech qayerda ishlatilmasdi va hamma talaba
+      // bir xil boshlang'ich tartibni ko'rardi.
+      const correct = q.correctOrder.map((token) => q.tokens.indexOf(token));
+      const order = shuffleAwayFrom(q.tokens.map((_, i) => i), correct);
       dragOrders[q.id] = order;
+      answers[q.id] = { type: "dragdrop", order, touched: false };
     }
   }
 
   return {
     studentName,
     startTime: Date.now(),
+    durationMinutes: config.durationMinutes,
     violationCount: 0,
     pausedAt: null,
     pausedDuration: 0,
-    categoryOrder: categoryOrder as Record<Category, number[]>,
+    categoryOrder,
     optionOrders,
     dragOrders,
     answers,
@@ -126,56 +204,23 @@ export function createSession(
   };
 }
 
-export function getQuestionById(id: number): Question {
-  return questions.find((q) => q.id === id)!;
+export function getQuestionById(id: number): Question | undefined {
+  return questions.find((q) => q.id === id);
 }
 
-export function gradeSession(session: ExamSession): {
-  totalPoints: number;
-  earned: number;
-  results: Array<{
-    question: Question;
-    answer: SessionAnswer;
-    correct: boolean;
-    points: number;
-    earned: number;
-  }>;
-} {
-  let totalPoints = 0;
-  let earned = 0;
-  const selectedIds = new Set(
-    CATEGORIES.flatMap((category) => session.categoryOrder[category] ?? []),
-  );
-
-  const results = questions
-    .filter((q) => selectedIds.has(q.id))
-    .map((q) => {
-      const answer = session.answers[q.id];
-      totalPoints += q.points;
-      let correct = false;
-
-      if (q.type === "mcq" && answer?.type === "mcq") {
-        correct = answer.selected === q.answer.charCodeAt(0) - 65;
-      } else if (q.type === "truefalse" && answer?.type === "truefalse") {
-        correct = answer.selected === q.answer;
-      } else if (
-        (q.type === "code" || q.type === "fix") &&
-        answer?.type === q.type
-      ) {
-        correct = q.accepted.some(
-          (expected) => expected.trim() === answer.value.trim(),
-        );
-      } else if (q.type === "drag" && answer?.type === "dragdrop") {
-        const correctOrder = q.correctOrder.map((token) =>
-          q.tokens.indexOf(token),
-        );
-        correct = JSON.stringify(answer.order) === JSON.stringify(correctOrder);
-      }
-
-      const pts = correct ? q.points : 0;
-      earned += pts;
-      return { question: q, answer, correct, points: q.points, earned: pts };
-    });
-
-  return { totalPoints, earned, results };
+/** Savolga javob berilgan deb hisoblanadimi. */
+export function isAnswered(answer: SessionAnswer | undefined): boolean {
+  if (!answer) return false;
+  switch (answer.type) {
+    case "mcq":
+    case "truefalse":
+      return answer.selected !== null;
+    case "code":
+    case "fix":
+      return answer.value.trim().length > 0;
+    case "dragdrop":
+      // Aralashtirilgan boshlang'ich tartib "javob" emas — talaba
+      // hech bo'lmaganda bir marta ko'chirgan bo'lishi kerak.
+      return answer.touched === true;
+  }
 }

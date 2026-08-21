@@ -1,12 +1,180 @@
-@import url('https://fonts.googleapis.com/css2?family=Comfortaa:wght@300..700&display=swap');
+/* Inter — interfeys, JetBrains Mono — kod.
+   Ilgari butun ilovaga Comfortaa qo'llanardi: u logo/sarlavha uchun
+   mo'ljallangan yumaloq display shrift, imtihon interfeysi uchun emas. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-* {
-    font-family: "Comfortaa", sans-serif;
-    font-optical-sizing: auto;
-    font-weight: 400;
-    font-style: normal;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-800 antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Sarlavhalar biroz zich terilsa jiddiyroq ko'rinadi */
+  h1, h2, h3 {
+    letter-spacing: -0.011em;
+  }
+
+  code, pre, .font-mono {
+    font-feature-settings: normal;
+  }
+
+  /* Klaviatura bilan yurish ko'rinadigan bo'lsin */
+  :focus-visible {
+    @apply outline-none ring-2 ring-green-600 ring-offset-2 ring-offset-white;
+  }
+
+  /* Harakatni kamaytirish sozlamasini hurmat qilamiz */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ─── Kod muharriri ────────────────────────────────────────────────────────
+   Bo'yash uchun matn ikki qatlamda chiziladi: pastda rangli <pre>, ustida
+   matni shaffof <textarea>. Ular BELGI-MA-BELGI ustma-ust tushishi uchun
+   shrift, o'lcham, qator balandligi va ichki bo'shliq bir xil bo'lishi shart. */
+@layer components {
+  .code-editor {
+    position: relative;
+  }
+
+  .code-editor__body {
+    display: flex;
+    overflow: hidden;
+    border: 1px solid theme('colors.gray.300');
+    border-radius: 10px;
+    background: #FCFCFD;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+
+  .code-editor__body:focus-within {
+    border-color: theme('colors.green.600');
+    box-shadow: 0 0 0 3px rgb(27 94 63 / 0.12);
+  }
+
+  .code-editor__gutter {
+    flex: none;
+    padding: 12px 8px 12px 12px;
+    overflow: hidden;
+    text-align: right;
+    color: theme('colors.gray.400');
+    background: theme('colors.gray.100');
+    border-right: 1px solid theme('colors.gray.200');
+    user-select: none;
+  }
+
+  .code-editor__area {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .code-editor__highlight,
+  .code-editor__input,
+  .code-editor__gutter {
+    font-family: theme('fontFamily.mono');
+    font-size: 13px;
+    line-height: 20px;
+    tab-size: 2;
+  }
+
+  .code-editor__highlight,
+  .code-editor__input {
+    margin: 0;
+    padding: 12px;
+    border: 0;
+    white-space: pre;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .code-editor__highlight {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    color: theme('colors.gray.800');
+  }
+
+  .code-editor__input {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    resize: none;
+    background: transparent;
+    color: transparent;
+    caret-color: theme('colors.green.700');
+    outline: none;
+  }
+
+  .code-editor__input::placeholder {
+    color: theme('colors.gray.400');
+  }
+
+  .code-editor__input::selection {
+    background: rgb(27 94 63 / 0.18);
+  }
+
+  /* Sintaksis ranglari — ilova palitrasidan olingan */
+  .tok-comment { color: #737C8E; font-style: italic; }
+  .tok-string  { color: #B4541E; }
+  .tok-number  { color: #0E6E5C; }
+  .tok-keyword { color: #8250A8; }
+  .tok-tag     { color: theme('colors.blue.700'); }
+  .tok-attr    { color: theme('colors.yellow.700'); }
+  .tok-func    { color: #8250A8; }
+  .tok-punct   { color: theme('colors.gray.500'); }
+
+  /* Avtoto'ldirish ro'yxati */
+  .code-editor__completions {
+    position: absolute;
+    z-index: 30;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    overflow: hidden;
+    background: #fff;
+    border: 1px solid theme('colors.gray.200');
+    border-radius: 10px;
+    box-shadow: 0 8px 28px rgb(18 22 29 / 0.10);
+  }
+
+  .code-editor__completions button {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    width: 100%;
+    padding: 7px 12px;
+    text-align: left;
+    transition: background-color 0.1s;
+  }
+
+  .code-editor__completions button.is-active {
+    background: theme('colors.green.50');
+  }
+
+  .code-editor__completion-label {
+    font-family: theme('fontFamily.mono');
+    font-size: 12.5px;
+    color: theme('colors.gray.800');
+  }
+
+  .code-editor__completion-detail {
+    margin-left: auto;
+    font-size: 11.5px;
+    color: theme('colors.gray.500');
+  }
 }
