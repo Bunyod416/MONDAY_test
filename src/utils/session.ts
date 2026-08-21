@@ -19,6 +19,9 @@ export type SessionAnswer =
 export type ExamSession = {
   studentName: string;
   startTime: number;
+  violationCount: number;
+  pausedAt: number | null;
+  pausedDuration: number;
   // Per-category: shuffled list of question IDs (not array indices)
   categoryOrder: Record<Category, number[]>;
   optionOrders: Record<number, number[]>;
@@ -51,7 +54,13 @@ export function loadSession(): ExamSession | null {
   const raw = getCookie();
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as ExamSession;
+    const session = JSON.parse(raw) as Partial<ExamSession>;
+    return {
+      ...session,
+      violationCount: session.violationCount ?? 0,
+      pausedAt: session.pausedAt ?? null,
+      pausedDuration: session.pausedDuration ?? 0,
+    } as ExamSession;
   } catch {
     return null;
   }
@@ -70,7 +79,10 @@ function shuffleArray<T>(arr: T[]): T[] {
   return a;
 }
 
-export function createSession(studentName: string): ExamSession {
+export function createSession(
+  studentName: string,
+  questionCounts: Record<Category, number>,
+): ExamSession {
   const categoryOrder: Record<string, number[]> = {};
   const optionOrders: Record<number, number[]> = {};
   const dragOrders: Record<number, number[]> = {};
@@ -78,7 +90,11 @@ export function createSession(studentName: string): ExamSession {
 
   for (const cat of CATEGORIES) {
     const qs = getByCategory(cat);
-    categoryOrder[cat] = shuffleArray(qs.map((q) => q.id));
+    const count = Math.max(
+      0,
+      Math.min(qs.length, Math.floor(questionCounts[cat] ?? qs.length)),
+    );
+    categoryOrder[cat] = shuffleArray(qs.map((q) => q.id)).slice(0, count);
   }
 
   for (const q of questions) {
@@ -99,6 +115,9 @@ export function createSession(studentName: string): ExamSession {
   return {
     studentName,
     startTime: Date.now(),
+    violationCount: 0,
+    pausedAt: null,
+    pausedDuration: 0,
     categoryOrder: categoryOrder as Record<Category, number[]>,
     optionOrders,
     dragOrders,
@@ -124,34 +143,39 @@ export function gradeSession(session: ExamSession): {
 } {
   let totalPoints = 0;
   let earned = 0;
+  const selectedIds = new Set(
+    CATEGORIES.flatMap((category) => session.categoryOrder[category] ?? []),
+  );
 
-  const results = questions.map((q) => {
-    const answer = session.answers[q.id];
-    totalPoints += q.points;
-    let correct = false;
+  const results = questions
+    .filter((q) => selectedIds.has(q.id))
+    .map((q) => {
+      const answer = session.answers[q.id];
+      totalPoints += q.points;
+      let correct = false;
 
-    if (q.type === "mcq" && answer?.type === "mcq") {
-      correct = answer.selected === q.answer.charCodeAt(0) - 65;
-    } else if (q.type === "truefalse" && answer?.type === "truefalse") {
-      correct = answer.selected === q.answer;
-    } else if (
-      (q.type === "code" || q.type === "fix") &&
-      answer?.type === q.type
-    ) {
-      correct = q.accepted.some(
-        (expected) => expected.trim() === answer.value.trim(),
-      );
-    } else if (q.type === "drag" && answer?.type === "dragdrop") {
-      const correctOrder = q.correctOrder.map((token) =>
-        q.tokens.indexOf(token),
-      );
-      correct = JSON.stringify(answer.order) === JSON.stringify(correctOrder);
-    }
+      if (q.type === "mcq" && answer?.type === "mcq") {
+        correct = answer.selected === q.answer.charCodeAt(0) - 65;
+      } else if (q.type === "truefalse" && answer?.type === "truefalse") {
+        correct = answer.selected === q.answer;
+      } else if (
+        (q.type === "code" || q.type === "fix") &&
+        answer?.type === q.type
+      ) {
+        correct = q.accepted.some(
+          (expected) => expected.trim() === answer.value.trim(),
+        );
+      } else if (q.type === "drag" && answer?.type === "dragdrop") {
+        const correctOrder = q.correctOrder.map((token) =>
+          q.tokens.indexOf(token),
+        );
+        correct = JSON.stringify(answer.order) === JSON.stringify(correctOrder);
+      }
 
-    const pts = correct ? q.points : 0;
-    earned += pts;
-    return { question: q, answer, correct, points: q.points, earned: pts };
-  });
+      const pts = correct ? q.points : 0;
+      earned += pts;
+      return { question: q, answer, correct, points: q.points, earned: pts };
+    });
 
   return { totalPoints, earned, results };
 }

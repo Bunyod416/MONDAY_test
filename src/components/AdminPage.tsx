@@ -8,6 +8,7 @@ type DecodedPayload = {
   studentName: string;
   startTime: number;
   submitTime: number;
+  violationCount?: number;
   answers: Record<number, SessionAnswer>;
   categoryOrder: Record<Category, number[]>;
   optionOrders: Record<number, number[]>;
@@ -26,6 +27,7 @@ type GradedResult = {
 };
 
 const ADMIN_PASSWORD = "JAMSHID";
+// const ADMIN_PASSWORD = "JAMSHID";
 
 const CATEGORY_COLORS: Record<Category, string> = {
   HTML: "bg-orange-50 text-orange-700 border-orange-200",
@@ -159,8 +161,9 @@ export default function AdminPage() {
       });
     }
 
+    const violationPenalty = Math.min(payload.violationCount ?? 0, totalEarned);
     setGraded(results);
-    setTotals({ earned: totalEarned, total: totalPts });
+    setTotals({ earned: totalEarned - violationPenalty, total: totalPts });
     setCatTotals(ct as Record<Category, { earned: number; total: number }>);
   }
 
@@ -192,9 +195,8 @@ export default function AdminPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Admin parolini kiriting"
                 required
-                className={`w-full border-2 rounded-lg px-4 py-3 text-gray-800 focus:outline-none transition-colors ${
-                  passwordError ? "border-red-400 bg-red-50" : "border-gray-200 focus:border-[#006400]"
-                }`}
+                className={`w-full border-2 rounded-lg px-4 py-3 text-gray-800 focus:outline-none transition-colors ${passwordError ? "border-red-400 bg-red-50" : "border-gray-200 focus:border-[#006400]"
+                  }`}
               />
               {passwordError && (
                 <p className="text-red-600 text-xs mt-1">Noto'g'ri parol</p>
@@ -312,6 +314,12 @@ export default function AdminPage() {
                   <p className="text-green-200 text-xs font-semibold uppercase tracking-wider">Vaqt</p>
                   <p className="text-white font-bold text-sm mt-0.5">
                     {decoded.submitTime ? formatDuration(decoded.startTime, decoded.submitTime) : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-green-200 text-xs font-semibold uppercase tracking-wider">Jarima</p>
+                  <p className="text-white font-bold text-lg mt-0.5">
+                    -{Math.min(decoded.violationCount ?? 0, totals.earned)} ball
                   </p>
                 </div>
               </div>

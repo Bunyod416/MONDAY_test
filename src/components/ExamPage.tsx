@@ -15,6 +15,7 @@ import Timer from "./Timer";
 import {
   loadSession,
   saveSession,
+  clearSession,
   createSession,
   getQuestionById,
   type ExamSession,
@@ -169,6 +170,43 @@ const CATEGORY_META: Record<Category, { label: string; icon: React.ReactNode; co
 };
 
 type Phase = "register" | "fullscreen" | "exam" | "submitted";
+const BLOCKED_STUDENTS_KEY = "exam_blocked_students_v1";
+const ACTIVE_STUDENT_KEY = "exam_active_student_v1";
+const DEVICE_BLOCKED_KEY = "exam_device_blocked_v1";
+const MAX_VIOLATIONS = 5;
+
+function normalizeStudentName(name: string) {
+  return name.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function getBlockedStudents(): string[] {
+  try {
+    const value = localStorage.getItem(BLOCKED_STUDENTS_KEY);
+    const students = value ? JSON.parse(value) : [];
+    return Array.isArray(students) ? students : [];
+  } catch {
+    return [];
+  }
+}
+
+function blockStudent(name: string) {
+  const student = normalizeStudentName(name);
+  if (!student) return;
+  localStorage.setItem(DEVICE_BLOCKED_KEY, "1");
+  localStorage.setItem(ACTIVE_STUDENT_KEY, student);
+  const blocked = getBlockedStudents();
+  if (!blocked.includes(student)) {
+    localStorage.setItem(BLOCKED_STUDENTS_KEY, JSON.stringify([...blocked, student]));
+  }
+}
+
+function isStudentBlocked(name: string) {
+  return getBlockedStudents().includes(normalizeStudentName(name));
+}
+
+function isDeviceBlocked() {
+  return localStorage.getItem(DEVICE_BLOCKED_KEY) === "1" || getBlockedStudents().length > 0;
+}
 
 export default function ExamPage() {
   useInjectStyles();
@@ -177,74 +215,101 @@ export default function ExamPage() {
   const [session, setSession] = useState<ExamSession | null>(null);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [questionCounts, setQuestionCounts] = useState<Record<Category, number>>({
+    HTML: 25,
+    CSS: 25,
+    JavaScript: 25,
+  });
+  const [registrationError, setRegistrationError] = useState("");
   const [activeCategory, setActiveCategory] = useState<Category>("HTML");
   const [currentIdx, setCurrentIdx] = useState(0);
   const [fsWarning, setFsWarning] = useState(false);
   const [fsBlocked, setFsBlocked] = useState(false);
   const [downloadCountdown, setDownloadCountdown] = useState(0);
   const fsViolations = useRef(0);
-  const scrollViolationLock = useRef(false);
-  const [violationReason, setViolationReason] = useState<"fullscreen" | "scroll">("fullscreen");
+  const ignoreFullscreenChange = useRef(false);
+  const backgroundViolationLock = useRef(false);
+  const autoDownloadRef = useRef(false);
 
   useEffect(() => {
     const s = loadSession();
+    const deviceBlocked = isDeviceBlocked();
     if (s) {
       setSession(s);
-      if (s.submitted) setPhase("submitted");
+      fsViolations.current = s.violationCount ?? 0;
+      if (deviceBlocked || fsViolations.current >= MAX_VIOLATIONS) {
+        blockStudent(s.studentName);
+        setFsBlocked(true);
+        setPhase("exam");
+      } else if (s.submitted) setPhase("submitted");
       else setPhase("fullscreen");
+    } else if (deviceBlocked) {
+      setRegistrationError("Bu qurilma bloklangan. Qayta test topshirib bo'lmaydi.");
+    } else {
+      const activeStudent = localStorage.getItem(ACTIVE_STUDENT_KEY) ?? "";
+      if (activeStudent && isStudentBlocked(activeStudent)) {
+        setRegistrationError("Bu o'quvchi bloklangan va qayta test topshira olmaydi.");
+      }
     }
   }, []);
 
-  const registerViolation = useCallback((reason: "fullscreen" | "scroll") => {
-    setViolationReason(reason);
+  const registerViolation = useCallback(() => {
     fsViolations.current += 1;
-    if (fsViolations.current >= 3) setFsBlocked(true);
+    setSession((prev) => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        violationCount: fsViolations.current,
+        pausedAt: prev.pausedAt ?? Date.now(),
+      };
+      if (updated.violationCount >= MAX_VIOLATIONS) blockStudent(updated.studentName);
+      saveSession(updated);
+      return updated;
+    });
+    if (fsViolations.current >= MAX_VIOLATIONS) setFsBlocked(true);
     else setFsWarning(true);
   }, []);
 
-  const onFsChange = useCallback(() => {
-    if (!document.fullscreenElement) {
-      registerViolation("fullscreen");
-    } else {
-      setFsWarning(false);
-    }
+  const registerBackgroundViolation = useCallback(() => {
+    if (backgroundViolationLock.current) return;
+    backgroundViolationLock.current = true;
+    registerViolation();
   }, [registerViolation]);
 
   useEffect(() => {
+    const handleRetakeShortcut = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.key.toUpperCase() !== "H" || !isDeviceBlocked()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      localStorage.removeItem(DEVICE_BLOCKED_KEY);
+      localStorage.removeItem(BLOCKED_STUDENTS_KEY);
+      localStorage.removeItem(ACTIVE_STUDENT_KEY);
+      clearSession();
+      fsViolations.current = 0;
+      backgroundViolationLock.current = false;
+      setSession(null);
+      setFsBlocked(false);
+      setFsWarning(false);
+      setRegistrationError("");
+      setPhase("register");
+    };
+
+    window.addEventListener("keydown", handleRetakeShortcut, true);
+    return () => window.removeEventListener("keydown", handleRetakeShortcut, true);
+  }, []);
+
+  const onFsChange = useCallback(() => {
+    if (ignoreFullscreenChange.current) {
+      ignoreFullscreenChange.current = false;
+      return;
+    }
     if (phase !== "exam") return;
-
-    const handleScroll = () => {
-      if (window.scrollY <= 0) return;
-      window.scrollTo(0, 0);
-      registerViolation("scroll");
-    };
-    const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY > 0 && !scrollViolationLock.current) {
-        scrollViolationLock.current = true;
-        registerViolation("scroll");
-        window.setTimeout(() => {
-          scrollViolationLock.current = false;
-        }, 500);
-      }
-    };
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    window.addEventListener("wheel", handleWheel, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("wheel", handleWheel);
-    };
+    if (!document.fullscreenElement) {
+      registerViolation();
+    } else {
+      setFsWarning(false);
+    }
   }, [phase, registerViolation]);
-
-  /* Keep the test viewport fixed while the exam is active. */
-  useEffect(() => {
-    if (phase !== "exam") return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [phase]);
 
   useEffect(() => {
     document.addEventListener("fullscreenchange", onFsChange);
@@ -253,16 +318,46 @@ export default function ExamPage() {
 
   useEffect(() => {
     if (phase !== "exam") return;
-    const block = (e: Event) => e.preventDefault();
-    document.addEventListener("contextmenu", block);
-    document.addEventListener("copy", block);
-    document.addEventListener("cut", block);
+    const blockContextMenu = (event: MouseEvent) => event.preventDefault();
+    const blockExamShortcuts = (event: KeyboardEvent) => {
+      const isFunctionKey = event.key === "F11" || event.key === "F12";
+      const isAltTab = event.altKey && event.key === "Tab";
+      const isReload = event.ctrlKey && ["r", "R"].includes(event.key);
+      if (isFunctionKey || isAltTab || isReload) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    document.addEventListener("contextmenu", blockContextMenu);
+    window.addEventListener("keydown", blockExamShortcuts, true);
     return () => {
-      document.removeEventListener("contextmenu", block);
-      document.removeEventListener("copy", block);
-      document.removeEventListener("cut", block);
+      document.removeEventListener("contextmenu", blockContextMenu);
+      window.removeEventListener("keydown", blockExamShortcuts, true);
     };
   }, [phase]);
+
+  useEffect(() => {
+    if (phase !== "exam") return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") registerBackgroundViolation();
+      else backgroundViolationLock.current = false;
+    };
+    const handleWindowBlur = () => registerBackgroundViolation();
+    const handleWindowFocus = () => {
+      backgroundViolationLock.current = false;
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener("focus", handleWindowFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [phase, registerBackgroundViolation]);
 
   async function requestFullscreen() {
     try { await document.documentElement.requestFullscreen(); } catch { return; }
@@ -272,7 +367,13 @@ export default function ExamPage() {
     e.preventDefault();
     if (!firstName.trim() || !lastName.trim()) return;
     const name = `${firstName.trim()} ${lastName.trim()}`;
-    const s = createSession(name);
+    if (isDeviceBlocked() || isStudentBlocked(name)) {
+      setRegistrationError("Bu qurilma bloklangan. Qayta test topshirib bo'lmaydi.");
+      return;
+    }
+    localStorage.setItem(ACTIVE_STUDENT_KEY, normalizeStudentName(name));
+    setRegistrationError("");
+    const s = createSession(name, questionCounts);
     saveSession(s);
     setSession(s);
     setPhase("fullscreen");
@@ -291,12 +392,23 @@ export default function ExamPage() {
 
   async function handleResumeFullscreen() {
     await requestFullscreen();
+    if (document.fullscreenElement) {
+      setSession((prev) => {
+        if (!prev || prev.pausedAt === null) return prev;
+        const updated = {
+          ...prev,
+          pausedAt: null,
+          pausedDuration: prev.pausedDuration + (Date.now() - prev.pausedAt),
+        };
+        saveSession(updated);
+        return updated;
+      });
+    }
     setFsWarning(false);
   }
 
   function handleViolationAction() {
-    if (violationReason === "scroll") setFsWarning(false);
-    else void handleResumeFullscreen();
+    void handleResumeFullscreen();
   }
 
   function updateAnswer(questionId: number, answer: SessionAnswer) {
@@ -310,6 +422,7 @@ export default function ExamPage() {
   }
 
   const handleSubmit = useCallback(() => {
+    ignoreFullscreenChange.current = true;
     setSession((prev) => {
       if (!prev) return prev;
       const updated: ExamSession = { ...prev, submitted: true };
@@ -332,20 +445,23 @@ export default function ExamPage() {
     if (!shouldWarn) return;
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (phase === "exam") registerBackgroundViolation();
       e.preventDefault();
       e.returnValue = "Imtihon yakunlanmagan. Chiqishni xohlaysizmi?";
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [phase, downloadCountdown]);
+  }, [phase, downloadCountdown, registerBackgroundViolation]);
 
   function handleDownload() {
     if (!session) return;
     const payload = {
       studentName: session.studentName,
       startTime: session.startTime,
+      pausedDuration: session.pausedDuration,
       submitTime: Date.now(),
+      violationCount: session.violationCount,
       answers: session.answers,
       categoryOrder: session.categoryOrder,
       optionOrders: session.optionOrders,
@@ -365,6 +481,16 @@ export default function ExamPage() {
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  useEffect(() => {
+    if (phase !== "submitted" || !session || autoDownloadRef.current) return;
+    autoDownloadRef.current = true;
+    const timer = window.setTimeout(() => handleDownload(), 10);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, session]);
+
+
 
   // ════════════════════════════════════════════════════════
   // REGISTER
@@ -410,6 +536,37 @@ export default function ExamPage() {
               })}
             </div>
 
+            <div className="mb-6 rounded-2xl border border-green-100 bg-green-50/50 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-gray-800">Savollar sonini tanlang</h3>
+                <span className="text-xs font-semibold text-gray-500">Min: 0 · Max: 25</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {CATEGORIES.map((cat) => {
+                  const count = questionCounts[cat];
+                  return (
+                    <label key={cat} className="text-center">
+                      <span className="mb-1.5 block text-xs font-bold text-gray-600">{cat === "JavaScript" ? "JS" : cat}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={25}
+                        value={count}
+                        onChange={(event) => {
+                          const value = Number(event.target.value);
+                          setQuestionCounts((previous) => ({
+                            ...previous,
+                            [cat]: Number.isFinite(value) ? Math.max(0, Math.min(25, value)) : 0,
+                          }));
+                        }}
+                        className="input-field w-full rounded-xl border-[1.5px] border-gray-200 bg-white px-2 py-2.5 text-center text-sm font-bold text-gray-800"
+                      />
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             <form onSubmit={handleRegister} className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">Ism</label>
@@ -437,9 +594,16 @@ export default function ExamPage() {
               <div className="bg-green-50 border border-green-100 rounded-2xl p-3.5 text-xs text-green-800 space-y-1">
                 <p className="font-bold text-[13px]">⚠️ Muhim eslatmalar:</p>
                 <p>• Imtihon to'liq ekranda o'tkaziladi</p>
-                <p>• To'liq ekrandan chiqqanda imtihon bloklanadi</p>
+                <p>• 5 ta qoidabuzarlikdan keyin qurilma bloklanadi</p>
+                <p>• Har bir qoidabuzarlik uchun 1 ball jarima olinadi</p>
                 <p>• Sahifa yangilansa ham javoblaringiz saqlanadi</p>
               </div>
+
+              {registrationError && (
+                <p className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-sm font-semibold text-red-700">
+                  {registrationError}
+                </p>
+              )}
 
               <button
                 type="submit"
@@ -558,7 +722,7 @@ export default function ExamPage() {
           <AlertTriangle size={60} className="mb-4" />
           <h2 className="text-2xl sm:text-3xl font-bold mb-3">Imtihon Bloklab Qo'yildi</h2>
           <p className="text-red-200 text-base max-w-sm">
-            Siz 3 marta imtihon qoidasini buzdingiz. O'qituvchingizga murojaat qiling.
+            5 ta qoidabuzarlik qayd etildi. Bu qurilmada qayta test topshirib bo'lmaydi.
           </p>
         </div>
       )}
@@ -568,17 +732,17 @@ export default function ExamPage() {
         <div className="fixed inset-0 z-40 bg-black/80 flex flex-col items-center justify-center text-white p-8 text-center">
           <AlertTriangle size={52} className="mb-4 text-yellow-400" />
           <h2 className="text-xl sm:text-2xl font-bold mb-2">
-            {violationReason === "scroll" ? "Scroll qilish taqiqlangan!" : "To'liq Ekrandan Chiqdingiz!"}
+            To'liq Ekrandan Chiqdingiz!
           </h2>
-          <p className="text-gray-300 mb-1 text-sm">Ogohlantirish: {fsViolations.current}/3</p>
+          <p className="text-gray-300 mb-1 text-sm">Ogohlantirish: {fsViolations.current}/{MAX_VIOLATIONS}</p>
           <p className="text-gray-400 text-sm mb-6 max-w-xs">
-            Yana {3 - fsViolations.current} marta chiqsangiz imtihon bloklanadi.
+            Yana {MAX_VIOLATIONS - fsViolations.current} marta qoidani buzsangiz imtihon bloklanadi.
           </p>
           <button
             onClick={handleViolationAction}
             className="bg-[#006400] hover:bg-green-700 text-white font-bold px-8 py-3.5 rounded-2xl transition-all duration-200 active:scale-[0.98]"
           >
-            {violationReason === "scroll" ? "Imtihonga qaytish" : "To'liq Ekranga Qaytish"}
+            To'liq Ekranga Qaytish
           </button>
         </div>
       )}
@@ -590,7 +754,12 @@ export default function ExamPage() {
 
       {/* ── Timer bar ── */}
       <div className="anim-fade-up bg-white border-b border-gray-100 px-4 py-2 flex justify-end" style={{ animationDelay: "0.1s" }}>
-        <Timer startTime={session.startTime} onTimeUp={handleSubmit} />
+        <Timer
+          startTime={session.startTime}
+          pausedAt={session.pausedAt}
+          pausedDuration={session.pausedDuration}
+          onTimeUp={handleSubmit}
+        />
       </div>
 
       {/* ── Category tabs ── */}

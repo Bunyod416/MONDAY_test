@@ -3,22 +3,31 @@ import { Clock, AlertTriangle } from "lucide-react";
 
 interface TimerProps {
   startTime: number;
+  pausedAt: number | null;
+  pausedDuration: number;
   onTimeUp: () => void;
 }
 
-export default memo(function Timer({ startTime, onTimeUp }: TimerProps) {
+export default memo(function Timer({ startTime, pausedAt, pausedDuration, onTimeUp }: TimerProps) {
   const TOTAL_MS = 60 * 60 * 1000; // 60 minutes
+  const getRemaining = () => {
+    const currentPause = pausedAt === null ? 0 : Date.now() - pausedAt;
+    const elapsed = Date.now() - startTime - pausedDuration - currentPause;
+    return Math.max(0, TOTAL_MS - elapsed);
+  };
 
   // Initial remaining hisoblash (sahifa qayta yuklansa ham to'g'ri ko'rsatadi)
-  const [remaining, setRemaining] = useState(() =>
-    Math.max(0, TOTAL_MS - (Date.now() - startTime))
-  );
+  const [remaining, setRemaining] = useState(getRemaining);
 
   const calledRef = useRef(false);
   const onTimeUpRef = useRef(onTimeUp);
   onTimeUpRef.current = onTimeUp;
 
   useEffect(() => {
+    setRemaining(getRemaining());
+
+    if (pausedAt !== null) return;
+
     // Agar vaqt allaqachon tugagan bo'lsa
     if (remaining === 0 && !calledRef.current) {
       calledRef.current = true;
@@ -27,7 +36,7 @@ export default memo(function Timer({ startTime, onTimeUp }: TimerProps) {
     }
 
     const interval = setInterval(() => {
-      const remainingMs = Math.max(0, TOTAL_MS - (Date.now() - startTime));
+      const remainingMs = getRemaining();
       setRemaining(remainingMs);
 
       if (remainingMs === 0 && !calledRef.current) {
@@ -38,8 +47,8 @@ export default memo(function Timer({ startTime, onTimeUp }: TimerProps) {
     }, 1000);
 
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startTime]); // faqat startTime o'zgarganda qayta ishga tushsin
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startTime, pausedAt, pausedDuration]);
 
   const minutes = Math.floor(remaining / 60000);
   const seconds = Math.floor((remaining % 60000) / 1000);
@@ -49,11 +58,10 @@ export default memo(function Timer({ startTime, onTimeUp }: TimerProps) {
 
   return (
     <div
-      className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-all ${
-        isLowTime
+      className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-bold text-sm transition-all ${isLowTime
           ? "bg-red-100 text-red-700 animate-pulse"
           : "bg-blue-50 text-blue-700"
-      }`}
+        }`}
     >
       {isLowTime && <AlertTriangle size={16} />}
       {!isLowTime && <Clock size={16} />}
