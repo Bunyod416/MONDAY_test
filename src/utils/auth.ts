@@ -14,7 +14,7 @@ const SALT = "EXAM_ADMIN_v1::";
 const DEFAULT_HASH =
   "ac26a6eee6204fca6c589ee8a56ac9426f59d352575322bfb04ccbf5439700bd"; // "JAMSHID"
 
-const PASSWORD_HASH = import.meta.env.VITE_ADMIN_PASSWORD_HASH ?? DEFAULT_HASH;
+const PASSWORD_HASH = import.meta.env.VITE_ADMIN_PASSWORD_HASH || DEFAULT_HASH;
 
 export function verifyAdminPassword(password: string): boolean {
   return sha256Hex(SALT + password) === PASSWORD_HASH;
