@@ -1,7 +1,6 @@
 import {
   questions,
   CATEGORIES,
-  getByCategory,
   type Question,
   type Category,
 } from "./data/questions";
@@ -35,6 +34,7 @@ export type ExamSession = {
   /** savol ID si bo'yicha javoblar */
   answers: Record<number, SessionAnswer>;
   submitted: boolean;
+  groupCode?: string;
 };
 
 export function clearSession() {
@@ -56,7 +56,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Buzilgan yoki eski formatdagi ma'lumot oq ekranga olib kelmasligi kerak —
  * shuning uchun har bir maydon alohida validatsiya qilinadi.
  */
-export function loadSession(): ExamSession | null {
+export function loadSession(questionsList: Question[] = questions): ExamSession | null {
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(STORAGE_KEY);
@@ -73,20 +73,19 @@ export function loadSession(): ExamSession | null {
     if (!isRecord(parsed.answers)) return null;
     if (!isRecord(parsed.categoryOrder)) return null;
 
-    const knownIds = new Set(questions.map((q) => q.id));
+    const knownIds = questionsList.length > 0 ? new Set(questionsList.map((q) => q.id)) : null;
     const categoryOrder = {} as Record<Category, number[]>;
     for (const cat of CATEGORIES) {
       const ids = parsed.categoryOrder[cat];
-      // Datadan olib tashlangan savol ID lari filtrlanadi
       categoryOrder[cat] = Array.isArray(ids)
-        ? ids.filter((id): id is number => typeof id === "number" && knownIds.has(id))
+        ? ids.filter((id): id is number => typeof id === "number" && (!knownIds || knownIds.has(id)))
         : [];
     }
 
     const answers: Record<number, SessionAnswer> = {};
     for (const [key, value] of Object.entries(parsed.answers)) {
       const id = Number(key);
-      if (!knownIds.has(id) || !isRecord(value)) continue;
+      if (isNaN(id) || (knownIds && !knownIds.has(id)) || !isRecord(value)) continue;
       answers[id] = value as unknown as SessionAnswer;
     }
 
@@ -109,6 +108,7 @@ export function loadSession(): ExamSession | null {
         : {},
       answers,
       submitted: parsed.submitted === true,
+      groupCode: typeof parsed.groupCode === "string" ? parsed.groupCode : undefined,
     };
   } catch {
     return null;
@@ -151,6 +151,8 @@ function shuffleAwayFrom(indices: number[], forbidden: number[]): number[] {
 export function createSession(
   studentName: string,
   config: ExamConfig,
+  questionsList: Question[] = questions,
+  groupCode?: string,
 ): ExamSession {
   const categoryOrder = {} as Record<Category, number[]>;
   const optionOrders: Record<number, number[]> = {};
@@ -158,17 +160,15 @@ export function createSession(
   const answers: Record<number, SessionAnswer> = {};
 
   for (const cat of CATEGORIES) {
-    const pool = getByCategory(cat);
+    const pool = questionsList.filter((q) => q.category === cat);
     const count = Math.max(0, Math.min(pool.length, Math.floor(config.counts[cat] ?? 0)));
     categoryOrder[cat] = shuffleArray(pool.map((q) => q.id)).slice(0, count);
   }
 
   // FAQAT tanlangan savollar uchun holat yaratiladi.
-  // Ilgari 75 ta savolning hammasi uchun yaratilardi — saqlash hajmi shundan
-  // keraksiz 3-4 barobar oshib ketardi.
   const selectedIds = new Set(CATEGORIES.flatMap((cat) => categoryOrder[cat]));
 
-  for (const q of questions) {
+  for (const q of questionsList) {
     if (!selectedIds.has(q.id)) continue;
 
     if (q.type === "mcq") {
@@ -179,9 +179,6 @@ export function createSession(
     } else if (q.type === "code" || q.type === "fix") {
       answers[q.id] = { type: q.type, value: "" };
     } else if (q.type === "drag") {
-      // Tokenlar endi haqiqatan aralashtiriladi — ilgari dragOrders
-      // hisoblanardi-yu, hech qayerda ishlatilmasdi va hamma talaba
-      // bir xil boshlang'ich tartibni ko'rardi.
       const correct = q.correctOrder.map((token) => q.tokens.indexOf(token));
       const order = shuffleAwayFrom(q.tokens.map((_, i) => i), correct);
       dragOrders[q.id] = order;
@@ -201,11 +198,12 @@ export function createSession(
     dragOrders,
     answers,
     submitted: false,
+    groupCode,
   };
 }
 
-export function getQuestionById(id: number): Question | undefined {
-  return questions.find((q) => q.id === id);
+export function getQuestionById(id: number, questionsList: Question[] = questions): Question | undefined {
+  return questionsList.find((q) => q.id === id);
 }
 
 /** Savolga javob berilgan deb hisoblanadimi. */

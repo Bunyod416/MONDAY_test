@@ -1,24 +1,15 @@
 import { similarity } from "./diff";
 import type { Category } from "./data/questions";
 
-export type CodeLang = "html" | "css" | "js";
+export type CodeLang = "html" | "css" | "js" | "py";
 
 export function langForCategory(category: Category): CodeLang {
-  return category === "HTML" ? "html" : category === "CSS" ? "css" : "js";
+  if (category === "HTML") return "html";
+  if (category === "CSS") return "css";
+  if (category === "Python") return "py";
+  return "js";
 }
 
-/**
- * Talaba javobini qabul qilinadigan javoblar bilan solishtiradi.
- *
- * Ilgari bu oddiy `expected.trim() === answer.trim()` edi. Sinov ko'rsatdiki,
- * mantiqan TO'G'RI 17 ta javobdan 16 tasi 0 ball olardi: ortiqcha probel,
- * tab bilan chekinish, ' o'rniga ", katta harfli #HEX, tushirib qoldirilgan
- * nuqta-vergul yoki xossalar tartibi boshqacha bo'lgani uchun.
- *
- * Endi ikkala tomon ham til qoidalariga ko'ra kanonik ko'rinishga keltiriladi.
- * MUHIM: bu faqat MA'NOSI o'zgarmaydigan farqlarni kechiradi — matn mazmuni,
- * qiymatlar va identifikatorlar baribir aynan mos kelishi shart.
- */
 export function answersMatch(
   studentAnswer: string,
   accepted: string[],
@@ -42,11 +33,23 @@ export function canonicalize(source: string, lang: CodeLang): string {
   try {
     if (lang === "html") return canonHtml(src);
     if (lang === "css") return canonCss(src);
+    if (lang === "py") return canonPy(src);
     return canonJs(src);
   } catch {
-    // Kanonizatsiya uddalay olmasa — hech bo'lmaganda probellarni tekislaymiz
     return src.replace(/\s+/g, " ");
   }
+}
+
+function canonPy(src: string): string {
+  const lines = src.split("\n").map((l) => l.replace(/#.*$/, "").trim()).filter(Boolean);
+  return lines
+    .map((line) =>
+      line
+        .replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, '"$1"')
+        .replace(/\s*([=+\-*/%:,()\[\]{}])\s*/g, "$1")
+        .replace(/([A-Za-z0-9_])\s+([A-Za-z0-9_])/g, "$1 $2")
+    )
+    .join("\n");
 }
 
 // ─── HTML ────────────────────────────────────────────────────────────────────

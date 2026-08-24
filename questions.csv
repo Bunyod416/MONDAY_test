@@ -1,0 +1,186 @@
+id,type,category,topic,question,options,answer,hint,points,placeholder,accepted,tokens,correct_order,broken_code
+101,mcq,HTML,HTML asoslari,UTF-8 nima uchun kerak?,"[""Unicode kodlash usuli"",""HTML5 versiyasi"",""Veb-brauzer nomi"",""Home Tool Markup Language""]",A,"UTF-8 — Unicode uchun kodlash usuli, turli xil tillar uchun.",1,,,,,
+102,mcq,HTML,HTML teglar,Eng katta sarlavha tegi qaysi?,"[""h6"",""h3"",""h1"",""header""]",C,Sarlavha teglari h1 dan h6 gacha bo'ladi — h1 eng katta.,1,,,,,
+103,mcq,HTML,HTML teglar,Paragraf (matn bo'limi) uchun qaysi teg ishlatiladi?,"[""text"",""p"",""para"",""div""]",B,<p> — paragraph degan ma'noni anglatadi.,1,,,,,
+104,mcq,HTML,Rasmlar,Rasmni sahifaga qo'shish uchun qaysi teg ishlatiladi?,"[""picture"",""photo"",""image"",""img""]",D,"<img> — self-closing teg, yopilmaydi.",1,,,,,
+105,mcq,HTML,Havolalar,Havola (link) yaratish uchun qaysi teg ishlatiladi?,"[""link"",""a"",""href"",""url""]",B,<a> — anchor degan ma'noni anglatadi.,1,,,,,
+106,mcq,HTML,Ro'yxatlar,Tartibsiz ro'yxat (bullet list) uchun qaysi teg ishlatiladi?,"[""ol"",""list"",""ul"",""li""]",C,"ul — unordered list, ol — ordered list.",1,,,,,
+107,mcq,HTML,Formalar,Foydalanuvchi ma'lumot kiritishi uchun qaysi teg ishlatiladi?,"[""input"",""field"",""enter"",""data""]",A,<input> turli xil type atributlari bilan ishlaydi.,1,,,,,
+108,mcq,HTML,Semantik teglar,Sahifaning asosiy navigatsiya qismi uchun qaysi semantik teg ishlatiladi?,"[""header"",""menu"",""nav"",""section""]",C,<nav> — navigation degan ma'noni anglatadi.,1,,,,,
+109,mcq,HTML,Atributlar,Rasmning muqobil matni (screen reader uchun) qaysi atribut orqali beriladi?,"[""title"",""src"",""alt"",""name""]",C,alt — alternative text. Rasm yuklanmasa ko'rsatiladi.,1,,,,,
+110,mcq,HTML,Formalar,Foydalanuvchiga bir nechta variantdan faqat bittasini tanlash imkoniyatini beruvchi input turi qaysi?,"[""type='checkbox'"",""type='radio'"",""type='select'"",""type='button'""]",B,type='radio' — bir xil name atributiga ega guruhdan faqat bitta variantni tanlash uchun.,1,,,,,
+111,truefalse,HTML,HTML asoslari,HTML — dasturlash tili hisoblanadi.,,false,"HTML — belgilash tili (markup language), dasturlash tili emas.",1,,,,,
+112,truefalse,HTML,HTML teglar,<br> tegi yangi qator yaratadi.,,true,"br — line break, matnni keyingi qatordan davom ettiradi.",1,,,,,
+113,truefalse,HTML,HTML tuzilishi,<!DOCTYPE html> deklaratsiyasi <html> tegidan keyin yoziladi.,,false,<!DOCTYPE html> — HTML faylning eng birinchi qatorida bo'lishi shart.,1,,,,,
+114,truefalse,HTML,Atributlar,<a> tegida target='_blank' atributi havolani yangi tabda ochadi.,,true,_blank — yangi tab yoki oyna ochadi.,1,,,,,
+115,truefalse,HTML,Jadvallar,HTML jadvalda <td> tegi sarlavha katakchasini bildiradi.,,false,"Sarlavha uchun <th>, oddiy katak uchun <td> ishlatiladi.",1,,,,,
+116,code,HTML,Havolalar,"'Google' deb yoziladigan, https://google.com ga boradigan havola yozing.",,,"href=""https://google.com"" — havola yaratishning asosiy shakli.",1,<!-- Havolani shu yerga yozing -->,"[""<a href=\""https://google.com\"">Google</a>"",""<a href='https://google.com'>Google</a>""]",,,
+117,code,HTML,Rasmlar,logo.png rasmini qo'shing. alt matni 'Logo' bo'lsin.,,,img src='fayl' alt='matn' — rasm tegining asosiy shakli.,1,<!-- Rasm tegini shu yerga yozing -->,"[""<img src=\""logo.png\"" alt=\""Logo\"">"",""<img src='logo.png' alt='Logo'>"",""<img src=\""logo.png\"" alt=\""Logo\"" />""]",,,
+118,code,HTML,Sarlavhalar,'Salom Dunyo!' deb yozilgan birinchi darajali sarlavha yozing.,,,Birinchi darajali sarlavha: <h1>matn</h1>.,1,<!-- Sarlavhani shu yerga yozing -->,"[""<h1>Salom Dunyo!</h1>""]",,,
+119,code,HTML,Ro'yxatlar,"Olma, Nok, Banan — tartibsiz (bullet) ro'yxat yozing.",,,Tartibsiz ro'yxat: <ul> ichida <li> elementlar.,1,<!-- Ro'yxatni shu yerga yozing -->,"[""<ul>\n  <li>Olma</li>\n  <li>Nok</li>\n  <li>Banan</li>\n</ul>"",""<ul>\n<li>Olma</li>\n<li>Nok</li>\n<li>Banan</li>\n</ul>""]",,,
+120,code,HTML,Formalar,Parol kiritish uchun to'g'ri <input> tegini yozing.,,,type='password' — kiritilgan belgilar yashirin ko'rinadi.,1,<!-- Input tegini shu yerga yozing -->,"[""<input type=\""password\"">"",""<input type='password'>"",""<input type=\""password\"" />""]",,,
+121,drag,HTML,Havola tegi,Tokenlarni to'g'ri tartibga qo'ying — to'liq havola hosil qiling:,,,"a tegi: ochilish, atribut, >, matn, yopilish.",1,,,"[""</a>"",""<a"",""href=\""https://google.com\"""","">"",""Google""]","[""<a"",""href=\""https://google.com\"""","">"",""Google"",""</a>""]",
+122,drag,HTML,Jadval tuzilishi,Jadval elementlarini to'g'ri tartibda joylashtiring:,,,Jadval tartibi: table → tr → td.,1,,,"[""</table>"",""<table>"",""</tr>"",""<td>Ma'lumot</td>"",""<tr>""]","[""<table>"",""<tr>"",""<td>Ma'lumot</td>"",""</tr>"",""</table>""]",
+123,drag,HTML,HTML skelet,HTML5 skeletini to'g'ri tartibda joylashtiring:,,,"DOCTYPE birinchi, so'ng html, ichida head va body.",1,,,"[""<body></body>"",""<!DOCTYPE html>"",""</html>"",""<html>"",""<head></head>""]","[""<!DOCTYPE html>"",""<html>"",""<head></head>"",""<body></body>"",""</html>""]",
+124,fix,HTML,Rasm tegi,"Quyidagi kodda xato bor. Toping va to'g'irlang:
+<img src=""rasm.jpg"" alt=""Rasm>",,,"Har bir atribut qiymati qo'shtirnoq ichida yopilishi kerak: alt=""Rasm""",1,,"[""<img src=\""rasm.jpg\"" alt=\""Rasm\"">"",""<img src=\""rasm.jpg\"" alt=\""Rasm\"" />""]",,,"<img src=""rasm.jpg"" alt=""Rasm>"
+125,fix,HTML,Ro'yxat,"Quyidagi kodda xato bor. Toping va to'g'irlang:
+<ul>
+  <li>Olma
+  <li>Nok</li>
+</ul>",,,Har bir <li> tegi </li> bilan yopilishi shart.,1,,"[""<ul>\n  <li>Olma</li>\n  <li>Nok</li>\n</ul>""]",,,"<ul>
+  <li>Olma
+  <li>Nok</li>
+</ul>"
+201,mcq,CSS,CSS Joylashuv (Position),Foydalanuvchi sahifani skrol qilganda ham ekranning bir joyida qotib turadigan element yaratish uchun qaysi xususiyat ishlatiladi?,"[""position: static"",""position: relative"",""position: absolute"",""position: fixed""]",D,Fixed — ekranga yopishib oladi va scroll bilan siljimaydi.,1,,,,,
+202,mcq,CSS,Selektorlar,Class selektori qaysi belgi bilan boshlanadi?,"[""#"",""*"",""."",""@""]",C,"Class selektori nuqta (.) bilan, ID selektori # bilan boshlanadi.",1,,,,,
+203,mcq,CSS,Selektorlar,ID selektori qaysi belgi bilan boshlanadi?,"[""."",""@"",""*"",""#""]",D,ID selektori # bilan boshlanadi: #elementId { },1,,,,,
+204,mcq,CSS,Box model,Elementning ichki bo'shlig'i qaysi xususiyat bilan beriladi?,"[""margin"",""spacing"",""padding"",""border""]",C,padding — content va border orasidagi ichki bo'shliq.,1,,,,,
+205,mcq,CSS,Box model,Elementning tashqi bo'shlig'i qaysi xususiyat bilan beriladi?,"[""padding"",""margin"",""gap"",""space""]",B,margin — elementlar orasidagi tashqi bo'shliq.,1,,,,,
+206,mcq,CSS,Flexbox,Flexbox ni yoqish uchun qaysi xususiyat ishlatiladi?,"[""display: block"",""display: inline"",""display: flex"",""flex: true""]",C,display: flex — elementni flex konteynerga aylantiradi.,1,,,,,
+207,mcq,CSS,Flexbox,Flex elementlarni gorizontal o'rtaga tekislash uchun qaysi xususiyat ishlatiladi?,"[""align-items: center"",""text-align: center"",""justify-content: center"",""flex-align: middle""]",C,justify-content — asosiy o'q (gorizontal) bo'ylab tekislaydi.,1,,,,,
+208,mcq,CSS,Ranglar,CSS da oq rangni qaysi qiymat bilan berish mumkin?,"[""color: white yoki #ffffff"",""color: #000000"",""color: blank"",""color: light""]",A,"Oq rang: white yoki #ffffff yoki rgb(255,255,255).",1,,,,,
+209,mcq,CSS,Border-radius,Elementning burchaklarini yumaloq qilish uchun qaysi xususiyat ishlatiladi?,"[""corner-radius"",""round-border"",""border-radius"",""border-curve""]",C,border-radius: 8px — burchaklarni yumaloqlashtiradi.,1,,,,,
+210,mcq,CSS,Grid,CSS Grid ni yoqish uchun qaysi xususiyat ishlatiladi?,"[""display: table"",""display: grid"",""layout: grid"",""grid: true""]",B,display: grid — elementni grid konteynerga aylantiradi.,1,,,,,
+211,truefalse,CSS,CSS asoslari,CSS faylini HTML ga ulash uchun <style> tegi ishlatiladi.,,false,Tashqi CSS faylni ulash uchun <link rel='stylesheet' href='style.css'> ishlatiladi.,1,,,,,
+212,truefalse,CSS,Flexbox,align-items: center — flex elementlarni vertikal o'rtaga tekislaydi.,,true,align-items — kross o'q (vertikal) bo'ylab tekislaydi.,1,,,,,
+213,truefalse,CSS,Box model,margin: auto — elementni gorizontal o'rtaga tekislaydi.,,true,margin: auto — kenglik belgilangan blok elementni markazlaydi.,1,,,,,
+214,truefalse,CSS,Selektorlar,* selektori faqat div elementlarni tanlaydi.,,false,"* — universal selektor, sahifadagi BARCHA elementlarni tanlaydi.",1,,,,,
+215,truefalse,CSS,Transition,transition xususiyati CSS o'zgarishlarini silliq animatsiya qiladi.,,true,transition: xususiyat vaqt — o'zgarish animatsiyali bo'ladi.,1,,,,,
+216,code,CSS,Selektorlar,.title klassidagi elementning rangini #2e7d32 qiling.,,,Class selektori: .klassNomi { xususiyat: qiymat; },1,/* CSS kodini shu yerga yozing */,"["".title {\n  color: #2e7d32;\n}"","".title{color:#2e7d32;}""]",,,
+217,code,CSS,Flexbox,.box elementini flex qiling va elementlarni gorizontal va vertikal o'rtaga tekislang.,,,"justify-content — gorizontal, align-items — vertikal tekislash.",1,/* CSS kodini shu yerga yozing */,"["".box {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n}"","".box{display:flex;justify-content:center;align-items:center;}""]",,,
+218,code,CSS,Box model,.card elementiga ichki bo'shliq 16px va tashqi bo'shliq 8px bering.,,,"padding — ichki, margin — tashqi bo'shliq.",1,/* CSS kodini shu yerga yozing */,"["".card {\n  padding: 16px;\n  margin: 8px;\n}"","".card{padding:16px;margin:8px;}""]",,,
+219,code,CSS,Hover,.btn tugmasi hover bo'lganda fon rangini #1b5e20 ga o'zgartiring.,,,:hover — sichqoncha ustiga kelganda ishlaydi.,1,/* CSS kodini shu yerga yozing */,"["".btn:hover {\n  background-color: #1b5e20;\n}"","".btn:hover{background-color:#1b5e20;}"","".btn:hover {\n  background: #1b5e20;\n}""]",,,
+220,code,CSS,Grid,.grid elementini 3 ustunli grid ga aylantiring. Oraliq 24px bo'lsin.,,,"repeat(3, 1fr) — 3 ta teng kenglikdagi ustun.",1,/* CSS kodini shu yerga yozing */,"["".grid {\n  display: grid;\n  grid-template-columns: repeat(3, 1fr);\n  gap: 24px;\n}"","".grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;}""]",,,
+221,drag,CSS,Flexbox,Tokenlarni to'g'ri tartibga qo'ying — flex markazlash kodini hosil qiling:,,,"display: flex avval yoziladi, keyin justify-content.",1,,,"[""center;"",""display: flex;"",""justify-content:"","".box {"",""}""]","["".box {"",""display: flex;"",""justify-content:"",""center;"",""}""]",
+222,drag,CSS,Grid,Tokenlarni to'g'ri tartibga qo'ying — 3 ustunli grid hosil qiling:,,,"display: grid avval, keyin grid-template-columns.",1,,,"[""1fr);"","".grid {"",""grid-template-columns: repeat(3,"",""display: grid;"",""}""]","["".grid {"",""display: grid;"",""grid-template-columns: repeat(3,"",""1fr);"",""}""]",
+223,drag,CSS,Hover va Transition,Tokenlarni to'g'ri tartibga qo'ying — hover effekti hosil qiling:,,,:hover pseudo-klass elementga sichqoncha tekkanda ishlaydi.,1,,,"[""background: #1b5e20;"","".btn:hover {"",""}""]","["".btn:hover {"",""background: #1b5e20;"",""}""]",
+224,fix,CSS,CSS sintaksis,"Quyidagi kodda xato bor. Toping va to'g'irlang:
+.title {
+  color: #2e7d32
+  font-size: 24px;
+}",,,Har bir CSS qoidasi nuqta-vergul (;) bilan tugatilishi shart.,1,,"["".title {\n  color: #2e7d32;\n  font-size: 24px;\n}""]",,,".title {
+  color: #2e7d32
+  font-size: 24px;
+}"
+225,fix,CSS,Flexbox,"Quyidagi kodda xato bor. Toping va to'g'irlang:
+.nav {
+  display: flexbox;
+  gap: 12px;
+}",,,"To'g'ri qiymat 'flexbox' emas, 'flex' deb yoziladi.",1,,"["".nav {\n  display: flex;\n  gap: 12px;\n}""]",,,".nav {
+  display: flexbox;
+  gap: 12px;
+}"
+301,mcq,JavaScript,O'zgaruvchilar,Qayta o'zgartirib bo'lmaydigan o'zgaruvchi qaysi kalit so'z bilan e'lon qilinadi?,"[""var"",""let"",""const"",""fixed""]",C,"const — constant, ya'ni doimiy qiymat. Bir marta beriladi, o'zgartirilmaydi.",1,,,,,
+302,mcq,JavaScript,Ma'lumot turlari,JavaScript da matn (string) qanday yoziladi?,"[""'Salom' yoki \""Salom\"""",""[Salom]"",""Salom"",""{Salom}""]",A,String — bitta yoki ikkita qo'shtirnoq ichida yoziladi.,1,,,,,
+303,mcq,JavaScript,Funksiyalar,Funksiyani e'lon qilish uchun qaysi kalit so'z ishlatiladi?,"[""def"",""func"",""method"",""function""]",D,JavaScript da funksiya function kalit so'zi bilan e'lon qilinadi.,1,,,,,
+304,mcq,JavaScript,DOM,id='sarlavha' elementini tanlash uchun qaysi kod to'g'ri?,"[""document.getElement('sarlavha')"",""document.getElementById('sarlavha')"",""document.selectId('sarlavha')"",""document.findId('sarlavha')""]",B,getElementById — id bo'yicha elementni topadi.,1,,,,,
+305,mcq,JavaScript,Massivlar,Massivga yangi element qo'shish uchun qaysi metod ishlatiladi?,"[""add()"",""append()"",""push()"",""insert()""]",C,push() — massiv oxiriga yangi element qo'shadi.,1,,,,,
+306,mcq,JavaScript,Event,Tugma bosilganda ishga tushadigan event qaysi?,"[""onpress"",""ontouch"",""onclick yoki click"",""onsubmit""]",C,"click — eng ko'p ishlatiladigan event. addEventListener('click', ...) ko'rinishida.",1,,,,,
+307,mcq,JavaScript,localStorage,localStorage ga ma'lumot saqlash uchun qaysi metod ishlatiladi?,"[""localStorage.save()"",""localStorage.set()"",""localStorage.setItem()"",""localStorage.store()""]",C,"setItem(kalit, qiymat) — saqlash. getItem(kalit) — o'qish.",1,,,,,
+308,mcq,JavaScript,Shartlar,if-else dan qisqaroq yozish uchun qaysi operator ishlatiladi?,"[""switch"",""ternary operator (?:)"",""for loop"",""try-catch""]",B,shart ? true_qiymat : false_qiymat — ternary operator.,1,,,,,
+309,mcq,JavaScript,JSON,JavaScript ob'ektini JSON formatiga o'tkazish uchun qaysi metod ishlatiladi?,"[""JSON.parse()"",""JSON.convert()"",""JSON.stringify()"",""JSON.format()""]",C,stringify — ob'ektdan string. parse — stringdan ob'ekt.,1,,,,,
+310,mcq,JavaScript,Clipboard,Matnni foydalanuvchi clipboard'iga yozish uchun qaysi API ishlatiladi?,"[""document.clipboard.write()"",""window.copy()"",""navigator.clipboard.writeText()"",""clipboard.setText()""]",C,navigator.clipboard.writeText(matn) — zamonaviy Clipboard API.,1,,,,,
+311,truefalse,JavaScript,O'zgaruvchilar,let bilan e'lon qilingan o'zgaruvchini qayta o'zgartirish mumkin.,,true,let — qayta tayinlash mumkin. const esa tayinlanmaydi.,1,,,,,
+312,truefalse,JavaScript,Funksiyalar,Funksiyani chaqirish uchun faqat nomini yozish kifoya: salom,,false,Funksiyani chaqirish uchun qavslar kerak: salom(),1,,,,,
+313,truefalse,JavaScript,Massivlar,JavaScript massividagi birinchi element indeksi 1 dan boshlanadi.,,false,Massiv indeksi 0 dan boshlanadi: arr[0] — birinchi element.,1,,,,,
+314,truefalse,JavaScript,DOM,textContent xususiyati elementning matnini o'zgartiradi.,,true,element.textContent = 'yangi matn' — elementdagi matnni almashtiradi.,1,,,,,
+315,truefalse,JavaScript,JSON,JSON.parse() — stringni JavaScript ob'ektiga aylantiradi.,,true,parse — tahlil qilish. JSON stringni ob'ektga o'tkazadi.,1,,,,,
+316,code,JavaScript,O'zgaruvchilar,'Jasur' qiymatini saqlaydigan `ism` nomli const o'zgaruvchi e'lon qiling va konsolga chiqaring.,,,const o'zgaruvchi = qiymat; — e'lon qilish. console.log() — konsolga chiqarish.,1,// Kodingizni shu yerga yozing,"[""const ism = \""Jasur\"";\nconsole.log(ism);"",""const ism = 'Jasur';\nconsole.log(ism);"",""const name = \""Jasur\"";\nconsole.log(name);""]",,,
+317,code,JavaScript,Funksiyalar,"Ikkita sonni ko'paytiruvchi multiply(a, b) funksiyasini yozing.",,,return — funksiyadan natijani qaytaradi.,1,// Funksiyani shu yerga yozing,"[""function multiply(a, b) {\n  return a * b;\n}"",""const multiply = (a, b) => a * b;"",""const multiply = (a, b) => {\n  return a * b;\n};""]",,,
+318,code,JavaScript,DOM,id='matn' elementining matnini 'Yangi matn!' ga o'zgartiring.,,,getElementById — elementni topadi. textContent — matnni o'zgartiradi.,1,// Kodingizni shu yerga yozing,"[""document.getElementById('matn').textContent = 'Yangi matn!';"",""document.getElementById(\""matn\"").textContent = \""Yangi matn!\"";"",""const el = document.getElementById('matn');\nel.textContent = 'Yangi matn!';""]",,,
+319,code,JavaScript,localStorage,'til' kaliti bilan 'JavaScript' qiymatini localStorage ga saqlang.,,,"localStorage.setItem(kalit, qiymat) — saqlash uchun.",1,// Kodingizni shu yerga yozing,"[""localStorage.setItem('til', 'JavaScript');"",""localStorage.setItem(\""til\"", \""JavaScript\"");""]",,,
+320,code,JavaScript,Event,id='tugma' elementiga click eventi qo'shing. Bosilganda konsolga 'Bosildi!' chiqsin.,,,"addEventListener('click', callback) — click eventini ulaydi.",1,// Kodingizni shu yerga yozing,"[""document.getElementById('tugma').addEventListener('click', () => {\n  console.log('Bosildi!');\n});"",""document.getElementById(\""tugma\"").addEventListener(\""click\"", function() {\n  console.log(\""Bosildi!\"");\n});""]",,,
+321,drag,JavaScript,O'zgaruvchi e'loni,Tokenlarni to'g'ri tartibga qo'ying — o'zgaruvchi e'loni hosil qiling:,,,const o'zgaruvchiNomi = qiymat; — e'lon qilish tartibi.,1,,,"[""\""Jasur\"";"",""const"",""="",""ism""]","[""const"",""ism"",""="",""\""Jasur\"";""]",
+322,drag,JavaScript,localStorage,Tokenlarni to'g'ri tartibga qo'ying — localStorage saqlash kodini hosil qiling:,,,"localStorage.setItem(kalit, qiymat) tartibi.",1,,,"[""'qiymat');"","".setItem("",""'kalit',"",""localStorage""]","[""localStorage"","".setItem("",""'kalit',"",""'qiymat');""]",
+323,drag,JavaScript,Event listener,Tokenlarni to'g'ri tartibga qo'ying — click event ulash kodini hosil qiling:,,,"addEventListener(event, callback) — ikki argument oladi.",1,,,"[""'click',"",""() => console.log('OK'));"","".addEventListener("",""document.getElementById('btn')""]","[""document.getElementById('btn')"","".addEventListener("",""'click',"",""() => console.log('OK'));""]",
+324,fix,JavaScript,Funksiya chaqiruvi,"Quyidagi kodda xato bor. Toping va to'g'irlang:
+function salom() {
+  console.log(""Salom!"");
+}
+salom;",,,Funksiyani chaqirish uchun nomdan keyin () qo'shiladi: salom(),1,,"[""function salom() {\n  console.log(\""Salom!\"");\n}\nsalom();""]",,,"function salom() {
+  console.log(""Salom!"");
+}
+salom;"
+325,fix,JavaScript,O'zgaruvchi,"Quyidagi kodda xato bor. Toping va to'g'irlang:
+const yosh = 20;
+yosh = 25;",,,const o'zgartirilmaydi. Qayta tayinlash uchun let ishlatiladi.,1,,"[""let yosh = 20;\nyosh = 25;""]",,,"const yosh = 20;
+yosh = 25;"
+126,mcq,HTML,Semantik teglar,Mustaqil maqola yoki blog yozuvi uchun qaysi semantik teg mos?,"[""<article>"",""<aside>"",""<main>"",""<footer>""]",A,<article> mustaqil va alohida tarqatilishi mumkin bo'lgan kontent uchun ishlatiladi.,1,,,,,
+127,truefalse,HTML,Formalar,label tegidagi for atributi input elementining id atributiga mos keladi.,,true,"for va id qiymatlari bir xil bo'lsa, label input bilan bog'lanadi.",1,,,,,
+128,code,HTML,Formalar,Email kiritish uchun id='email' va name='email' atributlariga ega input yozing.,,,"Email maydoni uchun type='email', elementni aniqlash uchun id va name ishlatiladi.",1,<!-- Input tegini shu yerga yozing -->,"[""<input type=\""email\"" id=\""email\"" name=\""email\"">"",""<input type='email' id='email' name='email'>"",""<input type=\""email\"" id=\""email\"" name=\""email\"" />""]",,,
+129,drag,HTML,Forma tuzilishi,Formani yuboruvchi tugma kodini to'g'ri tartibga qo'ying:,,,"button tegi ochiladi, type atributi keladi, so'ng matn va yopilish tegi yoziladi.",1,,,"[""</button>"",""<button"",""type=\""submit\"""","">"",""Yuborish""]","[""<button"",""type=\""submit\"""","">"",""Yuborish"",""</button>""]",
+130,fix,HTML,Havolalar,"Quyidagi koddagi xatoni tuzating:
+<a href='about.html'>Biz haqimizda</a>",,,"Bu safar href qiymatida sintaksis to'g'ri, matnni o'zgartirmasdan kodni saqlash kerak.",1,,"[""<a href=\""about.html\"">Biz haqimizda</a>""]",,,<a href='about.html'>Biz haqimizda</a>
+226,mcq,CSS,Responsive dizayn,Ekran kengligi 600px yoki undan kichik bo'lganda stil berish uchun nima ishlatiladi?,"[""@screen"",""@media"",""@responsive"",""@viewport""]",B,@media so'rovi ekran o'lchami kabi shartlarga qarab CSS qo'llaydi.,1,,,,,
+227,truefalse,CSS,Responsive dizayn,box-sizing: border-box kenglik va balandlik hisobiga padding hamda borderni qo'shadi.,,true,"border-box o'lchamni content, padding va borderni hisobga olgan holda belgilaydi.",1,,,,,
+228,code,CSS,Responsive dizayn,600px yoki undan kichik ekranlarda .menu elementini yashiring.,,,@media (max-width: 600px) ichida .menu uchun display: none yoziladi.,1,/* CSS kodini shu yerga yozing */,"[""@media (max-width: 600px) {\n  .menu {\n    display: none;\n  }\n}"",""@media(max-width:600px){.menu{display:none;}}""]",,,
+229,drag,CSS,Responsive dizayn,Media query kodini to'g'ri tartibga qo'ying:,,,"Avval media query, uning ichida selektor, keyin CSS xususiyati yoziladi.",1,,,"[""}"",""@media (max-width: 600px) {"",""display: none;"","".menu {"",""}""]","[""@media (max-width: 600px) {"","".menu {"",""display: none;"",""}"",""}""]",
+230,fix,CSS,CSS o'zgaruvchilari,"Quyidagi koddagi xatoni tuzating:
+:root {
+  --main-color: #2e7d33
+}
+.title {
+  color: var(--main-color);
+}",,,CSS custom property qiymatining oxiriga nuqta-vergul qo'shing.,1,,"["":root {\n  --main-color: #2e7d32;\n}\n.title {\n  color: var(--main-color);\n}""]",,,":root {
+  --main-color: #2e7d32
+}
+.title {
+  color: var(--main-color);
+}"
+326,mcq,JavaScript,Massivlar,"Massivning har bir elementi ustida amal bajarib, yangi massiv qaytaradigan metod qaysi?","[""filter()"",""forEach()"",""map()"",""find()""]",C,"map() har bir element uchun yangi qiymat hisoblab, yangi massiv qaytaradi.",1,,,,,
+327,truefalse,JavaScript,Asinxron kod,Promise.then() asinxron amal muvaffaqiyatli tugagandan keyin kod bajarish imkonini beradi.,,true,then() Promise muvaffaqiyatli bajarilganda chaqiriladigan callbackni qabul qiladi.,1,,,,,
+328,code,JavaScript,Massivlar,"[1, 2, 3] massivining har bir elementini ikki baravar qiladigan map kodini yozing.",,,map() callback qabul qiladi: massiv.map(element => element * 2).,1,// Kodingizni shu yerga yozing,"[""[1, 2, 3].map((son) => son * 2);"",""[1, 2, 3].map(son => son * 2);"",""[1, 2, 3].map(function(son) { return son * 2; });""]",,,
+329,drag,JavaScript,Massivlar,Massivdan 10 dan katta sonlarni ajratuvchi kodni to'g'ri tartibga qo'ying:,,,filter() massivdan shartga mos elementlarni tanlaydi.,1,,,"[""10);"","".filter("",""[5, 12, 8, 20]"",""son => son >""]","[""[5, 12, 8, 20]"","".filter("",""son => son >"",""10);""]",
+330,fix,JavaScript,Shartlar,"Quyidagi koddagi xatoni tuzating:
+const yosh = 18;
+if (yosh > 18) {
+  console.log('Voyaga yetgan');
+}",,,"18 yosh ham voyaga yetgan hisoblanadi, shuning uchun >= operatori kerak.",1,,"[""const yosh = 18;\nif (yosh >= 18) {\n  console.log('Voyaga yetgan');\n}""]",,,"const yosh = 18;
+if (yosh > 18) {
+  console.log('Voyaga yetgan');
+}"
+401,mcq,Python,Python asoslari,Python dasturida matnni konsolga chiqarish uchun qaysi funksiya ishlatiladi?,"[""echo()"",""print()"",""console.log()"",""write()""]",B,Python'da qiymatni ekranga chiqarish uchun print() funksiyasi ishlatiladi.,1,,,,,
+402,mcq,Python,O'zgaruvchilar,Python'da o'zgaruvchiga qiymat berish uchun qaysi belgi ishlatiladi?,"[""="",""=="","":="",""->""]",A,O'zgaruvchi qiymati nom = qiymat shaklida yoziladi.,1,,,,,
+403,mcq,Python,Ma'lumot turlari,Python'da butun sonning turi qaysi?,"[""str"",""float"",""int"",""bool""]",C,int butun son turini bildiradi.,1,,,,,
+404,mcq,Python,Ro'yxatlar,List oxiriga element qo'shish metodi qaysi?,"[""add()"",""push()"",""append()"",""insertEnd()""]",C,append() list oxiriga element qo'shadi.,1,,,,,
+405,mcq,Python,Shartlar,Python'da shart tekshirish kalit so'zi qaysi?,"[""when"",""if"",""check"",""switch""]",B,if shart rost bo'lganda kodni bajaradi.,1,,,,,
+406,mcq,Python,Sikllar,Takrorlash siklini boshlash uchun qaysi kalit so'z ishlatiladi?,"[""repeat"",""foreach"",""for"",""loop""]",C,for iterable elementlari bo'ylab takrorlanadi.,1,,,,,
+407,mcq,Python,Lug'atlar,Python dictionary ma'lumotni qanday saqlaydi?,"[""Faqat sonlar"",""Kalit-qiymat juftliklari"",""Faqat belgilar"",""Faqat funksiyalar""]",B,Dictionary key: value juftliklaridan tashkil topadi.,1,,,,,
+408,truefalse,Python,Sintaksis,Python'da kod bloklarini belgilashda indentation muhim.,,true,"Python bloklarni qavslar bilan emas, indentation orqali ajratadi.",1,,,,,
+409,truefalse,Python,Satrlar,Python'da string qiymatlar qo'shtirnoq ichida yozilishi mumkin.,,true,"'Salom' va ""Salom"" Python'dagi string qiymatlardir.",1,,,,,
+410,truefalse,Python,Ro'yxatlar,Python list indekslari 1 dan boshlanadi.,,false,Python'da birinchi element indeksi 0 bo'ladi.,1,,,,,
+411,truefalse,Python,Funksiyalar,Python'da funksiya yaratish uchun def kalit so'zi ishlatiladi.,,true,def funksiya nomi(): ko'rinishida funksiya e'lon qilinadi.,1,,,,,
+412,truefalse,Python,Izohlar,Python'da # belgisi bir qatorli izoh yozish uchun ishlatiladi.,,true,# belgisidan keyingi matn bajarilmaydi.,1,,,,,
+413,truefalse,Python,Lug'atlar,Python dictionary qiymatlariga kalit orqali murojaat qilish mumkin.,,true,lugat['kalit'] ifodasi shu kalitga tegishli qiymatni qaytaradi.,1,,,,,
+414,code,Python,O'zgaruvchilar,25 qiymatini saqlaydigan yosh nomli o'zgaruvchi yarating.,,,O'zgaruvchiga qiymat berish: nom = qiymat.,1,# Kodingizni shu yerga yozing,"[""yosh = 25""]",,,
+415,code,Python,Chiqish,"Salom, Python! matnini konsolga chiqaradigan kod yozing.",,,Matn chiqarish uchun print() funksiyasidan foydalaning.,1,# Kodingizni shu yerga yozing,"[""print(\""Salom, Python!\"")"",""print('Salom, Python!')""]",,,
+416,code,Python,Arifmetik amallar,a va b sonlarining yig'indisini sum_value o'zgaruvchisiga saqlang.,,,Yig'indi uchun + operatori ishlatiladi.,1,# Kodingizni shu yerga yozing,"[""sum_value = a + b""]",,,
+417,code,Python,Shartlar,"yosh 18 yoki undan katta bo'lsa, Voyaga yetgan matnini chiqaring.",,,if dan keyin shart va ikki nuqta yoziladi.,1,# Kodingizni shu yerga yozing,"[""if yosh >= 18:\n    print(\""Voyaga yetgan\"")"",""if yosh >= 18:\n  print(\""Voyaga yetgan\"")""]",,,
+418,code,Python,Funksiyalar,"Ikki sonni qo'shadigan add(a, b) funksiyasini yozing.",,,"Funksiya def bilan boshlanadi, natija return orqali qaytariladi.",1,# Funksiyani shu yerga yozing,"[""def add(a, b):\n    return a + b"",""def add(a, b):\n  return a + b""]",,,
+419,code,Python,Ro'yxatlar,mevalar listiga Olma qiymatini qo'shing.,,,List oxiriga element qo'shish uchun append() ishlatiladi.,1,# Kodingizni shu yerga yozing,"[""mevalar.append(\""Olma\"")"",""mevalar.append('Olma')""]",,,
+420,drag,Python,O'zgaruvchilar,Python'da o'zgaruvchi e'lonini to'g'ri tartibga qo'ying:,,,"Avval nomga qiymat beriladi, keyin o'zgaruvchi chiqariladi.",1,,,"[""25"",""yosh"",""="",""print(yosh)""]","[""yosh"",""="",""25"",""print(yosh)""]",
+421,drag,Python,Chiqish,print funksiyasi kodini to'g'ri tartibga qo'ying:,,,Funksiya qavs ichida chiqariladigan qiymatni oladi.,1,,,"["")"",""print("",""\""Salom\""""]","[""print("",""\""Salom\"""","")""]",
+422,drag,Python,Shartlar,if shartini to'g'ri tartibga qo'ying:,,,"if dan keyin shart, ikki nuqta va ichkariga surilgan kod keladi.",1,,,"[""print(\""OK\"")"",""if"",""x > 0:"","" ""]","[""if"",""x > 0:"","" "",""print(\""OK\"")""]",
+423,drag,Python,Sikllar,for sikli boshlanishini to'g'ri tartibga qo'ying:,,,for o'zgaruvchi in iterable: tartibida yoziladi.,1,,,"[""in"",""for"",""range(3):"",""i""]","[""for"",""i"",""in"",""range(3):""]",
+424,drag,Python,Funksiyalar,Funksiya e'lonini to'g'ri tartibga qo'ying:,,,Funksiya def nomi(parametrlar): shaklida boshlanadi.,1,,,"[""add(a, b):"",""def"",""add"","" ""]","[""def"",""add"",""add(a, b):"","" ""]",
+425,fix,Python,Sintaksis,"Quyidagi koddagi xatoni tuzating:
+print('Salom'",,,print funksiyasining yopuvchi qavsini qo'shing.,1,,"[""print('Salom')"",""print(\""Salom\"")""]",,,print('Salom'
+426,fix,Python,Shartlar,"Quyidagi koddagi xatoni tuzating:
+if yosh >= 18
+    print('Katta')",,,if shartining oxiriga ikki nuqta qo'yiladi.,1,,"[""if yosh >= 18:\n    print('Katta')"",""if yosh >= 18:\n  print('Katta')""]",,,"if yosh >= 18
+    print('Katta')"
+427,fix,Python,Funksiyalar,"Quyidagi koddagi xatoni tuzating:
+def salom()
+    print('Salom')",,,Funksiya sarlavhasi oxiriga ikki nuqta qo'yiladi.,1,,"[""def salom():\n    print('Salom')"",""def salom():\n  print('Salom')""]",,,"def salom()
+    print('Salom')"
+428,fix,Python,O'zgaruvchilar,"Quyidagi koddagi xatoni tuzating:
+son == 10",,,"Qiymat berish uchun == emas, = operatori ishlatiladi.",1,,"[""son = 10""]",,,son == 10
+429,fix,Python,Sikllar,"Quyidagi koddagi xatoni tuzating:
+for i in range(3)
+    print(i)",,,for sikli sarlavhasi oxiriga ikki nuqta qo'yiladi.,1,,"[""for i in range(3):\n    print(i)"",""for i in range(3):\n  print(i)""]",,,"for i in range(3)
+    print(i)"
+430,fix,Python,Ro'yxatlar,"Quyidagi koddagi xatoni tuzating:
+mevalar = ['Olma'
+print(mevalar)",,,Listning yopuvchi kvadrat qavsini qo'shing.,1,,"[""mevalar = ['Olma']\nprint(mevalar)"",""mevalar = [\""Olma\""]\nprint(mevalar)""]",,,"mevalar = ['Olma'
+print(mevalar)"

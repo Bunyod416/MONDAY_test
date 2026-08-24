@@ -46,6 +46,7 @@ const CATEGORY_COLORS: Record<Category, string> = {
   HTML: "bg-orange-50 text-orange-700 border-orange-200",
   CSS: "bg-blue-50 text-blue-700 border-blue-200",
   JavaScript: "bg-yellow-50 text-yellow-700 border-yellow-200",
+  Python: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 
 export default function AdminPage() {

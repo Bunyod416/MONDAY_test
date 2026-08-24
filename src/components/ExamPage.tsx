@@ -6,6 +6,9 @@ import {
   Download,
   ChevronLeft,
   ChevronRight,
+  Check,
+  X,
+  Users,
 } from "lucide-react";
 import ExamHeader from "./ExamHeader";
 import MCQQuestionCard from "./MCQQuestionCard";
@@ -23,15 +26,36 @@ import {
   type SessionAnswer,
 } from "../utils/session";
 import { encodeResult } from "../utils/encoding";
-import { loadConfig, totalSelectedQuestions } from "../utils/config";
+import {
+  saveConfig,
+  totalSelectedQuestions,
+  defaultConfig,
+  type ExamConfig,
+} from "../utils/config";
 import { verifyAdminPassword } from "../utils/auth";
 import { setExamActive } from "../utils/examLock";
-import { CATEGORIES, type Category } from "../utils/data/questions";
+import {
+  CATEGORIES,
+  questions as localQuestions,
+  type Category,
+  type Question,
+} from "../utils/data/questions";
+import { fetchQuestions } from "../services/questionService";
+import { submitExamToSupabase } from "../services/submissionService";
+import {
+  fetchGroupByCode,
+  getGroupSubmissionsCount,
+  subscribeToGroupParticipants,
+  type GroupParticipantsCount,
+} from "../services/groupService";
+import {
+  initLiveMonitoring,
+  broadcastStudentLiveState,
+  closeLiveMonitoring,
+} from "../services/liveMonitoringService";
+import { supabase } from "../utils/supabase";
+import type { ExamGroup } from "../types";
 
-// ─── Animatsiya stillari (global bir marta inject qilinadi) ───
-// Barcha o'tishlar `cubic-bezier(0.2,0,0,1)` — sakramaydigan, o'lchovli egri.
-// Ilgari hamma joyda `cubic-bezier(0.34,1.56,0.64,1)` ishlatilardi: u oxirida
-// oshib ketadi (overshoot) va imtihon interfeysiga o'yinchoq tusini berardi.
 const EASE = "cubic-bezier(0.2, 0, 0, 1)";
 const ANIM_STYLES = `
   @keyframes slideDown {
@@ -60,13 +84,11 @@ const ANIM_STYLES = `
   .anim-slide-up   { animation: slideUp   0.28s ${EASE} both; }
   .anim-scale-in   { animation: scaleIn   0.24s ${EASE} both; }
 
-  /* Dots scroll bar yashirish */
   .dots-scroll { scrollbar-width: none; -ms-overflow-style: none; }
   .dots-scroll::-webkit-scrollbar { display: none; }
 
   .tab-btn { transition: border-color 0.18s ${EASE}, color 0.18s ${EASE}; }
 
-  /* Fokus halqasi — brend yashilida, jimgina */
   .input-field { transition: border-color 0.15s ${EASE}, box-shadow 0.15s ${EASE}; }
   .input-field:focus {
     border-color: #2C684F !important;
@@ -85,7 +107,6 @@ function useInjectStyles() {
   }, []);
 }
 
-// ─── Icons ───
 function HtmlIcon({ size = 20 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -152,13 +173,21 @@ const CATEGORY_META: Record<Category, { label: string; icon: React.ReactNode; co
     bg: "bg-yellow-50",
     border: "border-yellow-200",
   },
+  Python: {
+    label: "PY",
+    icon: <span className="text-[10px] font-bold">PY</span>,
+    color: "text-emerald-700",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+  },
 };
 
 type Phase = "register" | "fullscreen" | "exam" | "submitted";
+type GroupCheckStatus = "idle" | "checking" | "found" | "not_found" | "inactive" | "full";
+
 const BLOCKED_STUDENTS_KEY = "exam_blocked_students_v1";
 const ACTIVE_STUDENT_KEY = "exam_active_student_v1";
 const MAX_VIOLATIONS = 5;
-/** Fokus yo'qolganini qoidabuzarlik deb hisoblashdan oldin kutiladigan vaqt. */
 const BLUR_GRACE_MS = 1500;
 
 function normalizeStudentName(name: string) {
@@ -175,9 +204,6 @@ function getBlockedStudents(): string[] {
   }
 }
 
-// Bloklash faqat AYNAN SHU talabaga tegishli.
-// Ilgari bir talaba bloklansa butun qurilma hamma uchun yopilardi — kompyuter
-// sinfida bu birinchi qoidabuzarlikdan keyin imtihonni to'xtatib qo'yardi.
 function blockStudent(name: string) {
   const student = normalizeStudentName(name);
   if (!student) return;
@@ -197,12 +223,10 @@ function isStudentBlocked(name: string) {
   return student !== "" && getBlockedStudents().includes(student);
 }
 
-/** O'qituvchi uchun: barcha bloklarni tozalash (parol bilan himoyalangan). */
 function clearAllBlocks() {
   try {
     localStorage.removeItem(BLOCKED_STUDENTS_KEY);
     localStorage.removeItem(ACTIVE_STUDENT_KEY);
-    // Eski versiyadan qolgan "qurilma bloklandi" bayrog'i
     localStorage.removeItem("exam_device_blocked_v1");
   } catch {
     /* ignore */
@@ -233,22 +257,220 @@ export default function ExamPage() {
   const blurTimer = useRef<number | null>(null);
   const autoDownloadDone = useRef(false);
 
-  // Savollar soni va imtihon davomiyligi admin panelda belgilanadi —
-  // talaba ularni o'zgartira olmaydi. useState initializer bilan bir marta
-  // o'qiladi: har render'da localStorage'ga murojaat qilish shart emas.
-  const [config] = useState(loadConfig);
+  const [questionsList, setQuestionsList] = useState<Question[]>(localQuestions);
+  const [submitStatus, setSubmitStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+  // ─── Group Management State ───
+  const [groupCode, setGroupCode] = useState<string>("");
+  const [groupInfo, setGroupInfo] = useState<ExamGroup | null>(null);
+  const [groupCount, setGroupCount] = useState<number>(0);
+  const [groupStats, setGroupStats] = useState<GroupParticipantsCount>({
+    activeTaking: 0,
+    submittedCount: 0,
+    totalOccupied: 0,
+  });
+  const [groupCheckStatus, setGroupCheckStatus] = useState<GroupCheckStatus>("idle");
+  const [, setConfig] = useState<ExamConfig>(() => defaultConfig(localQuestions));
 
+  // Function to verify group code in real-time
+  const checkAndApplyGroup = useCallback(async (code: string) => {
+    const clean = code.trim().toUpperCase();
+    if (!clean) {
+      setGroupInfo(null);
+      setGroupCount(0);
+      setGroupStats({ activeTaking: 0, submittedCount: 0, totalOccupied: 0 });
+      setGroupCheckStatus("idle");
+      return null;
+    }
+
+    setGroupCheckStatus("checking");
+    const found = await fetchGroupByCode(clean);
+
+    if (!found) {
+      setGroupInfo(null);
+      setGroupCheckStatus("not_found");
+      return null;
+    }
+
+    const cnt = await getGroupSubmissionsCount(found.group_code);
+    setGroupInfo(found);
+    setGroupCount(cnt);
+
+    if (!found.is_active) {
+      setGroupCheckStatus("inactive");
+    } else if (cnt >= found.max_students) {
+      setGroupCheckStatus("full");
+    } else {
+      setGroupCheckStatus("found");
+      setConfig({
+        counts: found.counts,
+        durationMinutes: found.duration_minutes,
+      });
+    }
+
+    return found;
+  }, []);
+
+  // Subscribe to live participants count whenever groupCode changes
   useEffect(() => {
-    const s = loadSession();
+    if (!groupCode.trim()) return;
+    const unsub = subscribeToGroupParticipants(groupCode, (stats) => {
+      setGroupStats(stats);
+      setGroupCount(stats.totalOccupied);
+    });
+    return unsub;
+  }, [groupCode]);
+
+  // Track presence when student is taking the exam
+  useEffect(() => {
+    if (phase === "exam" && session && session.groupCode) {
+      const clean = session.groupCode.trim().toUpperCase();
+      const presenceCh = supabase.channel(`presence_${clean}`, {
+        config: { presence: { key: `student_${normalizeStudentName(session.studentName)}` } },
+      });
+
+      presenceCh.subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await presenceCh.track({
+            studentName: session.studentName,
+            groupCode: clean,
+            startedAt: session.startTime,
+          });
+        }
+      });
+
+      return () => {
+        supabase.removeChannel(presenceCh);
+      };
+    }
+  }, [phase, session?.studentName, session?.groupCode, session?.startTime]);
+
+  // 1. Initial Data Fetch & URL params
+  useEffect(() => {
+    fetchQuestions().then((loaded) => {
+      if (loaded && loaded.length > 0) {
+        setQuestionsList(loaded);
+      }
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const codeParam = params.get("group") || params.get("g") || "";
+    if (codeParam) {
+      const clean = codeParam.trim().toUpperCase();
+      setGroupCode(clean);
+      checkAndApplyGroup(clean);
+    }
+  }, [checkAndApplyGroup]);
+
+  // 2. Realtime Listener for Group and Submissions
+  useEffect(() => {
+    const channelName = `exam_student_feed_${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "exam_groups" },
+        (payload) => {
+          const group = payload.new as Partial<ExamGroup> | null;
+          if (group && group.group_code) {
+            const cleanCode = group.group_code.trim().toUpperCase();
+            if (groupCode.trim().toUpperCase() === cleanCode) {
+              checkAndApplyGroup(cleanCode);
+            }
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "results" },
+        (payload) => {
+          const inserted = payload.new as {
+            group_code?: string;
+            answers?: { _meta?: { group_code?: string } };
+          } | null;
+          const insertedGroup = (
+            inserted?.group_code || inserted?.answers?._meta?.group_code || ""
+          ).toString().trim().toUpperCase();
+
+          if (groupCode && insertedGroup === groupCode.trim().toUpperCase()) {
+            setGroupCount((prev) => prev + 1);
+          }
+        }
+      )
+      .on("broadcast", { event: "group_updated" }, (msg) => {
+        const updated = msg.payload as ExamGroup;
+        if (updated && updated.group_code) {
+          const clean = updated.group_code.trim().toUpperCase();
+          if (groupCode.trim().toUpperCase() === clean) {
+            setGroupInfo(updated);
+            setConfig({
+              counts: updated.counts,
+              durationMinutes: updated.duration_minutes,
+            });
+            if (!updated.is_active) {
+              setGroupCheckStatus("inactive");
+            } else {
+              setGroupCheckStatus("found");
+            }
+          }
+        }
+      })
+      .on("broadcast", { event: "all_groups_sync" }, () => {
+        if (groupCode.trim()) {
+          checkAndApplyGroup(groupCode.trim().toUpperCase());
+        }
+      })
+      .on("broadcast", { event: "new_submission" }, (msg) => {
+        const payload = msg.payload as {
+          group_code?: string;
+          answers?: { _meta?: { group_code?: string } };
+        } | null;
+        const gCode = (payload?.group_code || payload?.answers?._meta?.group_code || "").toString().trim().toUpperCase();
+        if (groupCode && gCode === groupCode.trim().toUpperCase()) {
+          setGroupCount((prev) => prev + 1);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [groupCode, checkAndApplyGroup]);
+
+  // Handle typing group code with debounce
+  useEffect(() => {
+    if (!groupCode.trim()) {
+      setGroupInfo(null);
+      setGroupCheckStatus("idle");
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      checkAndApplyGroup(groupCode);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [groupCode, checkAndApplyGroup]);
+
+  // Session recovery (F5 / Refresh)
+  useEffect(() => {
+    const s = loadSession(questionsList);
     if (s) {
       setSession(s);
+      if (s.groupCode) {
+        setGroupCode(s.groupCode);
+      }
+      const firstCategory = CATEGORIES.find((category) => (s.categoryOrder[category] ?? []).length > 0);
+      if (firstCategory) setActiveCategory(firstCategory);
       fsViolations.current = s.violationCount ?? 0;
       if (isStudentBlocked(s.studentName) || fsViolations.current >= MAX_VIOLATIONS) {
         blockStudent(s.studentName);
         setFsBlocked(true);
         setPhase("exam");
-      } else if (s.submitted) setPhase("submitted");
-      else setPhase("fullscreen");
+      } else if (s.submitted) {
+        setPhase("submitted");
+      } else {
+        setPhase("fullscreen");
+      }
       return;
     }
 
@@ -256,15 +478,69 @@ export default function ExamPage() {
     if (activeStudent && isStudentBlocked(activeStudent)) {
       setRegistrationError("Bu o'quvchi bloklangan va qayta test topshira olmaydi.");
     }
-  }, []);
+  }, [questionsList]);
 
-  // App.tsx dagi Ctrl+Shift+U admin yorlig'i imtihon vaqtida ishlamasin.
+  // App lock during exam
   useEffect(() => {
     setExamActive(phase === "exam");
     return () => setExamActive(false);
   }, [phase]);
 
-  /** Sessiyani saqlaydi; joy yetmasa talabani ogohlantiradi. */
+  // Live telemetry channel initialization
+  useEffect(() => {
+    if (phase === "exam" && session) {
+      initLiveMonitoring(session.studentName, session.groupCode || "");
+      return () => {
+        closeLiveMonitoring();
+      };
+    }
+  }, [phase, session?.studentName, session?.groupCode]);
+
+  // Live telemetry state broadcast on every action
+  useEffect(() => {
+    if (phase !== "exam" || !session) return;
+
+    const catIds = session.categoryOrder[activeCategory] ?? [];
+    const currentQuestionId = catIds[currentIdx] ?? 0;
+    const answeredCount = Object.keys(session.answers).filter(
+      (k) => k !== "_meta" && isAnswered(session.answers[Number(k)])
+    ).length;
+    const totalQuestions = CATEGORIES.reduce(
+      (sum, c) => sum + (session.categoryOrder[c]?.length ?? 0),
+      0
+    );
+    const progressPercent = totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0;
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - session.startTime - session.pausedDuration) / 1000));
+    const totalLimitSec = (session.durationMinutes || 60) * 60;
+    const remainingSeconds = Math.max(0, totalLimitSec - elapsedSeconds);
+
+    broadcastStudentLiveState({
+      studentName: session.studentName,
+      groupCode: session.groupCode || "",
+      category: activeCategory,
+      questionIndex: currentIdx + 1,
+      questionId: currentQuestionId,
+      categoryTotal: catIds.length,
+      answeredCount,
+      totalQuestions,
+      progressPercent,
+      remainingSeconds,
+      elapsedSeconds,
+      violationCount: session.violationCount || 0,
+      status: fsBlocked ? "blocked" : fsWarning ? "warning" : "in_exam",
+      lastActiveAt: Date.now(),
+    });
+  }, [
+    phase,
+    session,
+    activeCategory,
+    currentIdx,
+    fsWarning,
+    fsBlocked,
+    session?.answers,
+    session?.violationCount,
+  ]);
+
   const persist = useCallback((updated: ExamSession) => {
     setStorageWarning(!saveSession(updated));
   }, []);
@@ -292,9 +568,7 @@ export default function ExamPage() {
     registerViolation();
   }, [registerViolation]);
 
-  // Ctrl+H — o'qituvchi uchun blokni ochish. Endi admin paroli so'raladi:
-  // ilgari bu yorliq hech qanday tekshiruvsiz hamma bloklarni o'chirardi,
-  // ya'ni istalgan talaba o'zini blokdan chiqarib olardi.
+  // Teacher unlock (Ctrl+H)
   useEffect(() => {
     const handleUnlockShortcut = (event: KeyboardEvent) => {
       if (!event.ctrlKey || event.key.toUpperCase() !== "H") return;
@@ -379,8 +653,6 @@ export default function ExamPage() {
       }
     };
 
-    // Sahifa haqiqatan yashirilgan (boshqa tabga o'tish, minimallashtirish) —
-    // bu aniq qoidabuzarlik, darhol hisoblanadi.
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         cancelBlurTimer();
@@ -390,9 +662,6 @@ export default function ExamPage() {
       }
     };
 
-    // blur esa juda sezgir: brauzer manzil qatoriga bosish, ikkinchi monitor,
-    // bildirishnoma — bularning hammasi blur beradi. Shuning uchun darhol emas,
-    // fokus BLUR_GRACE_MS davomida qaytmasagina qoidabuzarlik deb yoziladi.
     const handleWindowBlur = () => {
       cancelBlurTimer();
       blurTimer.current = window.setTimeout(() => {
@@ -421,29 +690,77 @@ export default function ExamPage() {
     try { await document.documentElement.requestFullscreen(); } catch { return; }
   }
 
-  function handleRegister(e: React.FormEvent) {
+  // Registration handler with STRICT GROUP CODE REQUIREMENT
+  async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
-    if (!firstName.trim() || !lastName.trim()) return;
+    setRegistrationError("");
+
+    if (!firstName.trim() || !lastName.trim()) {
+      setRegistrationError("Iltimos, ism va familiyangizni to'liq kiriting.");
+      return;
+    }
+
+    const cleanGroupCode = groupCode.trim().toUpperCase();
+    if (!cleanGroupCode) {
+      setRegistrationError("⚠️ Guruh kodi kiritilishi majburiy! Iltimos, o'qituvchingiz bergan guruh kodini kiriting.");
+      return;
+    }
+
     const name = `${firstName.trim()} ${lastName.trim()}`;
     if (isStudentBlocked(name)) {
       setRegistrationError("Bu o'quvchi bloklangan va qayta test topshira olmaydi.");
       return;
     }
-    if (totalSelectedQuestions(config) === 0) {
+
+    // Validate Group in real time
+    const activeGroup = await checkAndApplyGroup(cleanGroupCode);
+    if (!activeGroup) {
+      setRegistrationError(`❌ "${cleanGroupCode}" guruh kodi topilmadi! Iltimos, to'g'ri guruh kodini kiriting.`);
+      return;
+    }
+
+    if (!activeGroup.is_active) {
+      setRegistrationError("🔒 Ushbu guruh uchun imtihon yakunlangan yoki o'qituvchi tomonidan yopilgan.");
+      return;
+    }
+
+    const currentCnt = await getGroupSubmissionsCount(activeGroup.group_code);
+    if (currentCnt >= activeGroup.max_students) {
       setRegistrationError(
-        "Imtihon sozlanmagan: savollar soni 0. O'qituvchiga murojaat qiling.",
+        `🚫 Ushbu guruhda talabalar soni to'lgan (Maksimal ${activeGroup.max_students} ta talaba topshirishi mumkin).`
       );
       return;
     }
+
+    const groupConfig: ExamConfig = {
+      counts: activeGroup.counts,
+      durationMinutes: activeGroup.duration_minutes,
+    };
+
+    let currentQuestions = questionsList;
+    if (currentQuestions.length === 0) {
+      const loaded = await fetchQuestions();
+      if (loaded && loaded.length > 0) {
+        currentQuestions = loaded;
+        setQuestionsList(loaded);
+      } else {
+        currentQuestions = localQuestions;
+      }
+    }
+
+    const savedConfig = saveConfig(groupConfig, currentQuestions);
+
     try {
       localStorage.setItem(ACTIVE_STUDENT_KEY, normalizeStudentName(name));
     } catch {
       /* ignore */
     }
-    setRegistrationError("");
-    const s = createSession(name, config);
+
+    const s = createSession(name, savedConfig, currentQuestions, cleanGroupCode);
     persist(s);
     setSession(s);
+    const firstCategory = CATEGORIES.find((category) => (s.categoryOrder[category] ?? []).length > 0);
+    if (firstCategory) setActiveCategory(firstCategory);
     setPhase("fullscreen");
   }
 
@@ -491,16 +808,51 @@ export default function ExamPage() {
 
   const handleSubmit = useCallback(() => {
     ignoreFullscreenChange.current = true;
+    let finalSession: ExamSession | null = null;
     setSession((prev) => {
       if (!prev) return prev;
       const updated: ExamSession = { ...prev, submitted: true };
+      finalSession = updated;
       persist(updated);
       return updated;
     });
     setPhase("submitted");
     setDownloadCountdown(5);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => { });
-  }, [persist]);
+
+    if (finalSession) {
+      const sess = finalSession as ExamSession;
+      const totQuestions = CATEGORIES.reduce(
+        (sum, c) => sum + (sess.categoryOrder[c]?.length ?? 0),
+        0
+      );
+
+      broadcastStudentLiveState({
+        studentName: sess.studentName,
+        groupCode: sess.groupCode || "",
+        category: activeCategory,
+        questionIndex: currentIdx + 1,
+        questionId: 0,
+        categoryTotal: 0,
+        answeredCount: Object.keys(sess.answers).filter((k) => k !== "_meta").length,
+        totalQuestions: totQuestions,
+        progressPercent: 100,
+        remainingSeconds: 0,
+        elapsedSeconds: Math.max(0, Math.floor((Date.now() - sess.startTime) / 1000)),
+        violationCount: sess.violationCount || 0,
+        status: "submitted",
+        lastActiveAt: Date.now(),
+      });
+
+      setSubmitStatus("submitting");
+      submitExamToSupabase(sess, questionsList)
+        .then(() => setSubmitStatus("success"))
+        .catch((err) => {
+          console.error("Supabase submission failed:", err);
+          setSubmitStatus("error");
+        });
+    }
+  }, [persist, questionsList, activeCategory, currentIdx]);
 
   useEffect(() => {
     if (phase !== "submitted" || downloadCountdown <= 0) return;
@@ -534,13 +886,15 @@ export default function ExamPage() {
       categoryOrder: session.categoryOrder,
       optionOrders: session.optionOrders,
       dragOrders: session.dragOrders,
+      groupCode: session.groupCode,
     };
     const encoded = encodeResult(payload);
     const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const parts = session.studentName.split(" ");
     const fname = parts[0] || "Student";
     const lname = parts.slice(1).join("_") || "Unknown";
-    const filename = `${fname}_${lname}_${ts}.txt`;
+    const groupPrefix = session.groupCode ? `${session.groupCode}_` : "";
+    const filename = `${groupPrefix}${fname}_${lname}_${ts}.txt`;
     const blob = new Blob([encoded], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -549,8 +903,6 @@ export default function ExamPage() {
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
-    // Ba'zi brauzerlar (Firefox) yuklashni darhol revoke qilinsa bekor qiladi —
-    // shuning uchun tozalash keyingi tick'ga qoldiriladi.
     window.setTimeout(() => {
       URL.revokeObjectURL(url);
       a.remove();
@@ -559,23 +911,13 @@ export default function ExamPage() {
 
   useEffect(() => {
     if (phase !== "submitted" || !session || autoDownloadDone.current) return;
-    // Bayroq timeout ICHIDA qo'yiladi. Ilgari u effekt boshida qo'yilardi:
-    // StrictMode effektni ikki marta chaqirganda cleanup timerni o'chirar,
-    // ikkinchi chaqiruv esa bayroq tufayli darhol qaytar edi — natijada
-    // dev rejimda fayl umuman yuklanmasdi.
     const timer = window.setTimeout(() => {
       autoDownloadDone.current = true;
       handleDownload();
     }, 10);
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, session]);
 
-
-
-  // Ctrl+H bilan ochiladigan o'qituvchi oynasi. Komponent emas, oddiy JSX
-  // o'zgaruvchisi — aks holda har render'da qayta mount bo'lib, input fokusi
-  // yo'qolib turardi.
   const unlockModal = unlockOpen ? (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6">
       <form
@@ -620,8 +962,6 @@ export default function ExamPage() {
     </div>
   ) : null;
 
-  // localStorage yozib bo'lmasa (kvota to'lgan / private rejim) talaba buni
-  // BILISHI kerak — aks holda javoblari jimgina yo'qoladi.
   const storageBanner = storageWarning ? (
     <div className="bg-red-600 px-4 py-2 text-center text-xs font-semibold text-white">
       ⚠️ Javoblaringizni brauzer xotirasiga saqlab bo'lmayapti. Sahifani yangilamang!
@@ -629,41 +969,45 @@ export default function ExamPage() {
   ) : null;
 
   // ════════════════════════════════════════════════════════
-  // REGISTER
+  // REGISTER PHASE
   // ════════════════════════════════════════════════════════
   if (phase === "register") {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         {/* Header */}
-        <div className="bg-green-700 text-white py-3 px-6 relative overflow-hidden anim-slide-down">
-          <div className="text-center">
-            <h1 className="text-[clamp(13px,3.5vw,18px)] font-semibold tracking-wide">
-              Web Development — Final Exam
-            </h1>
-            <p className="text-green-100 text-xs mt-0.5">Talaba ma'lumotlarini kiriting</p>
+        <div className="bg-green-700 text-white py-3.5 px-6 relative overflow-hidden anim-slide-down shadow-md">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <div>
+              <h1 className="text-[clamp(13px,3.5vw,18px)] font-bold tracking-wide">
+                Web Development — Final Exam
+              </h1>
+              <p className="text-green-100 text-xs mt-0.5">Online Imtihon va Baholash Tizimi</p>
+            </div>
           </div>
         </div>
 
         <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
-          <div className="anim-card-in bg-white rounded-3xl shadow-lg border border-green-100 w-full max-w-md p-6 sm:p-8">
+          <div className="anim-card-in bg-white rounded-3xl shadow-lg border border-green-100 w-full max-w-xl p-5 sm:p-8">
             {/* Icon */}
             <div className="text-center mb-6">
-              <div className="w-14 h-14 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center mx-auto mb-4 text-green-700">
+              <div className="w-14 h-14 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center mx-auto mb-3 text-green-700">
                 <ExamDocIcon size={30} />
               </div>
-              <h2 className="text-2xl font-semibold text-gray-800">Ro'yxatdan o'tish</h2>
-              <p className="text-gray-500 text-sm mt-1">Imtihon 3 bo'lim: HTML • CSS • JavaScript</p>
+              <h2 className="text-2xl font-bold text-gray-800">Ro'yxatdan o'tish</h2>
+              <p className="text-gray-500 text-xs mt-1">
+                Imtihonni boshlash uchun ism-familiya va <strong>Guruh kodi</strong>ni kiriting
+              </p>
             </div>
 
             {/* Category badges */}
-            <div className="flex gap-2 justify-center flex-wrap mb-6">
+            <div className="flex gap-2 justify-center flex-wrap mb-5">
               {CATEGORIES.map((cat, i) => {
-                const m = CATEGORY_META[cat];
+                const m = CATEGORY_META[cat] ?? CATEGORY_META.HTML;
                 return (
                   <span
                     key={cat}
-                    className={`anim-fade-up flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold ${m.color} ${m.bg} ${m.border}`}
-                    style={{ animationDelay: `${i * 0.08}s` }}
+                    className={`anim-fade-up flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold ${m.color} ${m.bg} ${m.border}`}
+                    style={{ animationDelay: `${i * 0.05}s` }}
                   >
                     {m.icon} {m.label}
                   </span>
@@ -671,68 +1015,147 @@ export default function ExamPage() {
               })}
             </div>
 
-            {/* Savollar soni endi FAQAT admin panelda belgilanadi — bu yerda
-                shunchaki ko'rsatiladi, talaba o'zgartira olmaydi. */}
-            <div className="mb-6 rounded-2xl border border-green-100 bg-green-50/50 p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-gray-800">Imtihon tarkibi</h3>
-                <span className="text-xs font-semibold text-gray-500">
-                  {config.durationMinutes} daqiqa
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {CATEGORIES.map((cat) => (
-                  <div key={cat} className="rounded-xl border-[1.5px] border-gray-200 bg-white px-2 py-2.5 text-center">
-                    <span className="mb-1 block text-xs font-semibold text-gray-600">
-                      {cat === "JavaScript" ? "JS" : cat}
+            {/* Live Group Info Banner */}
+            {groupInfo && groupCheckStatus === "found" && (
+              <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/90 p-3.5 anim-scale-in">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-emerald-900 font-bold text-sm">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>{groupInfo.group_name}</span>
+                    <span className="text-xs bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-md font-mono">
+                      {groupInfo.group_code}
                     </span>
-                    <span className="text-sm font-semibold text-gray-800">{config.counts[cat]}</span>
                   </div>
-                ))}
+                  <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                    🟢 Faol
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs text-emerald-800 border-t border-emerald-200/60 pt-2 font-medium">
+                  <div>
+                    <span className="text-[11px] text-emerald-600 block">Vaqt:</span>
+                    <strong>{groupInfo.duration_minutes} daqiqa</strong>
+                  </div>
+                  <div>
+                    <span className="text-[11px] text-emerald-600 block">Savollar:</span>
+                    <strong>{totalSelectedQuestions({ counts: groupInfo.counts, durationMinutes: groupInfo.duration_minutes })} ta</strong>
+                  </div>
+                  <div>
+                    <span className="text-[11px] text-emerald-600 block">Talabalar Sig'imi:</span>
+                    <strong>{groupStats.totalOccupied || groupCount} / {groupInfo.max_students}</strong>
+                    {groupStats.activeTaking > 0 && (
+                      <span className="block text-[10px] text-emerald-700 font-semibold">
+                        ({groupStats.activeTaking} ta jarayonda)
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
 
             <form onSubmit={handleRegister} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Ism</label>
-                <input
-                  type="text"
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  placeholder="Ismingizni kiriting"
-                  required
-                  className="input-field w-full border-[1.5px] border-gray-200 rounded-2xl px-4 py-3 text-gray-800 transition-colors text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Familiya</label>
-                <input
-                  type="text"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  placeholder="Familiyangizni kiriting"
-                  required
-                  className="input-field w-full border-[1.5px] border-gray-200 rounded-2xl px-4 py-3 text-gray-800 transition-colors text-sm"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Ism <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="Ismingizni kiriting"
+                    required
+                    className="input-field w-full border-[1.5px] border-gray-200 rounded-2xl px-4 py-2.5 text-gray-800 transition-colors text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Familiya <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Familiyangizni kiriting"
+                    required
+                    className="input-field w-full border-[1.5px] border-gray-200 rounded-2xl px-4 py-2.5 text-gray-800 transition-colors text-sm"
+                  />
+                </div>
               </div>
 
-              <div className="bg-green-50 border border-green-100 rounded-2xl p-3.5 text-xs text-green-800 space-y-1">
-                <p className="font-semibold text-[13px]">⚠️ Muhim eslatmalar:</p>
-                <p>• Imtihon to'liq ekranda o'tkaziladi</p>
+              {/* MANDATORY GROUP CODE SECTION */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1 flex items-center justify-between">
+                  <span>
+                    Guruh Kodi <span className="text-red-500">*</span> <span className="text-xs font-normal text-red-600">(Majburiy)</span>
+                  </span>
+                  <span className="text-[11px] text-gray-400 font-normal">O'qituvchi bergan kod</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={groupCode}
+                    onChange={(e) => {
+                      setGroupCode(e.target.value.toUpperCase());
+                      setRegistrationError("");
+                    }}
+                    placeholder="Guruh kodini kiriting..."
+                    required
+                    className={`input-field w-full border-[1.5px] rounded-2xl pl-4 pr-10 py-2.5 text-gray-800 transition-colors text-sm font-mono font-bold uppercase tracking-wider ${groupCheckStatus === "found"
+                      ? "border-emerald-500 bg-emerald-50/30"
+                      : groupCheckStatus === "not_found" || groupCheckStatus === "inactive" || groupCheckStatus === "full"
+                        ? "border-red-400 bg-red-50/40"
+                        : "border-gray-300"
+                      }`}
+                  />
+                  <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
+                    {groupCheckStatus === "checking" && (
+                      <div className="w-4 h-4 border-2 border-green-700 border-t-transparent rounded-full animate-spin" />
+                    )}
+                    {groupCheckStatus === "found" && <Check size={18} className="text-emerald-600 font-bold" />}
+                    {(groupCheckStatus === "not_found" || groupCheckStatus === "inactive" || groupCheckStatus === "full") && (
+                      <X size={18} className="text-red-500 font-bold" />
+                    )}
+                  </div>
+                </div>
+
+                {/* Live validation feedback message */}
+                {groupCode.trim() && groupCheckStatus === "not_found" && (
+                  <p className="mt-1.5 text-xs font-semibold text-red-600 flex items-center gap-1">
+                    <X size={13} /> Bunday guruh kodi topilmadi. O'qituvchingizdan to'g'ri kodni oling.
+                  </p>
+                )}
+                {groupCheckStatus === "inactive" && (
+                  <p className="mt-1.5 text-xs font-semibold text-amber-700 flex items-center gap-1">
+                    <AlertTriangle size={13} /> Ushbu guruh uchun imtihon yopilgan yoki nofaol holatda.
+                  </p>
+                )}
+                {groupCheckStatus === "full" && (
+                  <p className="mt-1.5 text-xs font-semibold text-red-600 flex items-center gap-1">
+                    <Users size={13} /> Ushbu guruhda talabalar soni to'lgan ({groupCount}/{groupInfo?.max_students}).
+                  </p>
+                )}
+              </div>
+
+              {/* Rules summary */}
+              <div className="bg-green-50 border border-green-100 rounded-2xl p-3 text-xs text-green-800 space-y-1">
+                <p className="font-bold text-[12px]">⚠️ Qoidalar va Eslatmalar:</p>
+                <p>• Guruh kodi kiritilmaguncha test boshlanmaydi</p>
+                <p>• Imtihon faqat to'liq ekranda o'tkaziladi</p>
                 <p>• {MAX_VIOLATIONS} ta qoidabuzarlikdan keyin imtihon bloklanadi</p>
-                <p>• Har bir qoidabuzarlik uchun 1 ball jarima olinadi</p>
-                <p>• Sahifa yangilansa ham javoblaringiz saqlanadi</p>
+                <p>• Sahifa yangilansa ham javoblaringiz 100% saqlanadi</p>
               </div>
 
               {registrationError && (
-                <p className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-sm font-semibold text-red-700">
-                  {registrationError}
-                </p>
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700 flex items-center gap-2">
+                  <AlertTriangle size={16} className="flex-shrink-0" />
+                  <span>{registrationError}</span>
+                </div>
               )}
 
               <button
                 type="submit"
-                className="w-full bg-green-700 hover:bg-green-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm shadow-sm hover:shadow-md"
+                disabled={groupCheckStatus === "not_found" || groupCheckStatus === "inactive" || groupCheckStatus === "full"}
+                className="w-full bg-green-700 hover:bg-green-800 disabled:opacity-50 text-white font-bold py-3.5 rounded-2xl transition-all text-sm shadow-sm hover:shadow-md cursor-pointer disabled:cursor-not-allowed"
               >
                 Imtihonni Boshlash
               </button>
@@ -751,19 +1174,24 @@ export default function ExamPage() {
     return (
       <div className="min-h-screen bg-green-700 flex flex-col items-center justify-center p-6">
         <div className="anim-scale-in bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 text-center">
-          <div className="w-16 h-16 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center mx-auto mb-6 text-green-700">
+          <div className="w-16 h-16 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center mx-auto mb-5 text-green-700">
             <Maximize size={34} />
           </div>
-          <h2 className="text-2xl font-semibold text-gray-800 mb-2">To'liq Ekran Rejimi</h2>
-          <p className="text-gray-600 text-sm mb-2">
+          <h2 className="text-2xl font-bold text-gray-800 mb-1">To'liq Ekran Rejimi</h2>
+          <p className="text-gray-600 text-sm mb-1">
             Salom, <strong>{session?.studentName}</strong>!
           </p>
-          <p className="text-gray-500 text-sm mb-7">
-            Imtihon faqat to'liq ekran rejimida o'tkaziladi.
+          {session?.groupCode && (
+            <p className="text-xs font-semibold text-green-700 bg-green-50 inline-block px-2.5 py-1 rounded-lg mb-4 border border-green-200">
+              Guruh: {session.groupCode}
+            </p>
+          )}
+          <p className="text-gray-500 text-xs mb-6">
+            Imtihon faqat to'liq ekran rejimida o'tkaziladi. Boshqa ilovaga o'tish qoidabuzarlik deb hisoblanadi.
           </p>
           <button
             onClick={handleStartExam}
-            className="w-full bg-green-700 hover:bg-green-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm shadow-sm hover:shadow-md"
+            className="w-full bg-green-700 hover:bg-green-800 text-white font-bold py-3.5 rounded-2xl transition-colors text-sm shadow-sm hover:shadow-md"
           >
             To'liq Ekranga Kirish va Boshlash
           </button>
@@ -774,32 +1202,56 @@ export default function ExamPage() {
   }
 
   // ════════════════════════════════════════════════════════
-  // SUBMITTED
+  // SUBMITTED PHASE
   // ════════════════════════════════════════════════════════
   if (phase === "submitted") {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
         <div className="anim-scale-in bg-white rounded-3xl shadow-lg border border-green-100 w-full max-w-md p-8 text-center">
-          <div className="w-16 h-16 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center mx-auto mb-6 text-green-700">
+          <div className="w-16 h-16 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center mx-auto mb-4 text-green-700">
             <CheckCircle size={34} />
           </div>
-          <h2 className="text-2xl font-semibold text-gray-800 mb-2">Imtihon Topshirildi!</h2>
-          <p className="text-gray-600 text-sm mb-2">
+          <h2 className="text-2xl font-bold text-gray-800 mb-1">Imtihon Topshirildi!</h2>
+          <p className="text-gray-600 text-sm mb-1">
             <strong>{session?.studentName}</strong>
           </p>
-          <p className="text-gray-500 text-sm mb-8">
-            Javoblaringiz muvaffaqiyatli saqlandi. Natijani o'qituvchiga yuboring.
-          </p>
-          <div className="space-y-3">
-            <button
-              onClick={handleDownload}
-              className="w-full flex items-center justify-center gap-2 bg-green-700 hover:bg-green-800 text-white font-semibold py-3.5 rounded-2xl transition-colors text-sm shadow-sm hover:shadow-md"
-            >
-              <Download size={17} />
-              Natijani Yuklab Olish
-            </button>
+          {session?.groupCode && (
+            <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-200 mb-3 inline-block">
+              Guruh: {session.groupCode}
+            </span>
+          )}
 
-          </div>
+          {submitStatus === "submitting" && (
+            <div className="my-4 rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700 font-semibold flex items-center justify-center gap-2">
+              <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              <span>Natijalar serverga yuborilmoqda...</span>
+            </div>
+          )}
+
+          {submitStatus === "success" && (
+            <div className="my-4 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 font-semibold flex items-center justify-center gap-1.5">
+              <CheckCircle size={16} className="text-emerald-600" />
+              <span>Natijangiz serverga muvaffaqiyatli saqlandi!</span>
+            </div>
+          )}
+
+          {submitStatus === "error" && (
+            <div className="my-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 font-semibold">
+              ⚠️ Serverga ulanishda uzilish bo'ldi. Zaxira nusxa faylini yuklab olib o'qituvchiga topshiring.
+            </div>
+          )}
+
+          <p className="text-gray-500 text-xs mb-6">
+            Javoblaringiz serverda qayd etildi. Zaxira nusxa uchun shifrlangan faylni ham yuklab olishingiz mumkin.
+          </p>
+
+          <button
+            onClick={handleDownload}
+            className="w-full flex items-center justify-center gap-2 bg-green-700 hover:bg-green-800 text-white font-bold py-3.5 rounded-2xl transition-colors text-sm shadow-sm hover:shadow-md"
+          >
+            <Download size={17} />
+            Natijani Yuklab Olish
+          </button>
         </div>
         {unlockModal}
       </div>
@@ -809,12 +1261,14 @@ export default function ExamPage() {
   if (!session) return null;
 
   // ════════════════════════════════════════════════════════
-  // EXAM
+  // EXAM TAKING PHASE
   // ════════════════════════════════════════════════════════
   const catIds = session.categoryOrder[activeCategory] ?? [];
+  const activeCategories = CATEGORIES.filter(
+    (category) => (session.categoryOrder[category] ?? []).length > 0
+  );
   const currentQuestionId = catIds[currentIdx];
-  const currentQ = currentQuestionId != null ? getQuestionById(currentQuestionId) : null;
-
+  const currentQ = currentQuestionId != null ? getQuestionById(currentQuestionId, questionsList) : null;
   const activeSession = session;
 
   function catAnsweredCount(cat: Category): number {
@@ -835,18 +1289,16 @@ export default function ExamPage() {
     setCurrentIdx(0);
   }
 
-  const meta = CATEGORY_META[activeCategory];
+  const meta = CATEGORY_META[activeCategory] ?? CATEGORY_META.HTML;
 
-  // Sarlavhadagi raqamlar endi haqiqiy sessiyadan olinadi —
-  // ilgari "30 savol • 120 ball" deb qattiq yozilgan edi.
   const selectedTotalPoints = CATEGORIES.reduce(
     (sum, cat) =>
       sum +
       (activeSession.categoryOrder[cat] ?? []).reduce(
-        (s, id) => s + (getQuestionById(id)?.points ?? 0),
-        0,
+        (s, id) => s + (getQuestionById(id, questionsList)?.points ?? 0),
+        0
       ),
-    0,
+    0
   );
 
   return (
@@ -854,38 +1306,38 @@ export default function ExamPage() {
       {storageBanner}
       {unlockModal}
 
-      {/* ── Fullscreen blocked ── */}
+      {/* Fullscreen blocked */}
       {fsBlocked && (
         <div className="fixed inset-0 z-50 bg-red-700 flex flex-col items-center justify-center text-white p-8 text-center">
           <AlertTriangle size={60} className="mb-4" />
-          <h2 className="text-2xl sm:text-3xl font-semibold mb-3">Imtihon Bloklab Qo'yildi</h2>
-          <p className="text-red-200 text-base max-w-sm">
+          <h2 className="text-2xl sm:text-3xl font-bold mb-3">Imtihon Bloklab Qo'yildi</h2>
+          <p className="text-red-200 text-sm max-w-sm">
             {MAX_VIOLATIONS} ta qoidabuzarlik qayd etildi. Blokni faqat o'qituvchi ocha oladi.
           </p>
         </div>
       )}
 
-      {/* ── Fullscreen warning ── */}
+      {/* Fullscreen warning */}
       {fsWarning && !fsBlocked && (
         <div className="fixed inset-0 z-40 bg-black/80 flex flex-col items-center justify-center text-white p-8 text-center">
           <AlertTriangle size={52} className="mb-4 text-yellow-400" />
-          <h2 className="text-xl sm:text-2xl font-semibold mb-2">
-            To'liq Ekrandan Chiqdingiz!
-          </h2>
-          <p className="text-gray-300 mb-1 text-sm">Ogohlantirish: {fsViolations.current}/{MAX_VIOLATIONS}</p>
-          <p className="text-gray-400 text-sm mb-6 max-w-xs">
+          <h2 className="text-xl sm:text-2xl font-bold mb-2">To'liq Ekrandan Chiqdingiz!</h2>
+          <p className="text-gray-300 mb-1 text-sm font-semibold">
+            Ogohlantirish: {fsViolations.current}/{MAX_VIOLATIONS}
+          </p>
+          <p className="text-gray-400 text-xs mb-6 max-w-xs">
             Yana {MAX_VIOLATIONS - fsViolations.current} marta qoidani buzsangiz imtihon bloklanadi.
           </p>
           <button
             onClick={handleViolationAction}
-            className="bg-green-700 hover:bg-green-800 text-white font-semibold px-8 py-3.5 rounded-2xl transition-colors"
+            className="bg-green-700 hover:bg-green-800 text-white font-bold px-8 py-3.5 rounded-2xl transition-colors"
           >
             To'liq Ekranga Qaytish
           </button>
         </div>
       )}
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div className="anim-slide-down">
         <ExamHeader
           studentName={session.studentName}
@@ -894,8 +1346,21 @@ export default function ExamPage() {
         />
       </div>
 
-      {/* ── Timer bar ── */}
-      <div className="anim-fade-up bg-white border-b border-gray-100 px-4 py-2 flex justify-end" style={{ animationDelay: "0.1s" }}>
+      {/* Timer & Group info bar */}
+      <div className="anim-fade-up bg-white border-b border-gray-100 px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {session.groupCode && (
+            <span className="text-xs font-bold bg-blue-50 text-blue-800 px-2.5 py-1 rounded-lg border border-blue-200">
+              Guruh: {session.groupCode}
+            </span>
+          )}
+          {session.violationCount > 0 && (
+            <span className="text-xs font-bold bg-red-50 text-red-700 px-2 py-1 rounded-lg border border-red-200 flex items-center gap-1">
+              <AlertTriangle size={12} /> Jarima: -{session.violationCount} ball
+            </span>
+          )}
+        </div>
+
         <Timer
           startTime={session.startTime}
           durationMinutes={session.durationMinutes}
@@ -905,12 +1370,12 @@ export default function ExamPage() {
         />
       </div>
 
-      {/* ── Category tabs ── */}
+      {/* Category tabs */}
       <div className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-3 sm:px-4">
           <div className="flex">
-            {CATEGORIES.map((cat) => {
-              const m = CATEGORY_META[cat];
+            {activeCategories.map((cat) => {
+              const m = CATEGORY_META[cat] ?? CATEGORY_META.HTML;
               const answered = catAnsweredCount(cat);
               const total = catTotalCount(cat);
               const active = cat === activeCategory;
@@ -919,24 +1384,24 @@ export default function ExamPage() {
                 <button
                   key={cat}
                   onClick={() => switchCategory(cat)}
-                  className={`tab-btn flex-1 flex flex-col items-center py-2.5 sm:py-3 px-1 border-b-[3px] text-[11px] sm:text-xs font-semibold gap-1 min-w-0 ${active
+                  className={`tab-btn flex-1 flex flex-col items-center py-2.5 sm:py-3 px-1 border-b-[3px] text-[11px] sm:text-xs font-bold gap-1 min-w-0 ${active
                     ? "border-green-700 text-green-700"
                     : "border-transparent text-gray-400 hover:text-gray-600"
                     }`}
                 >
-                  {/* Icon + label — icon only on tiny screens */}
                   <span className={`flex items-center gap-1 sm:gap-1.5 ${active ? "text-green-700" : ""}`}>
                     <span className={active ? "text-green-700" : m.color}>{m.icon}</span>
                     <span className="hidden xs:inline sm:inline">{m.label}</span>
-                    {/* Fallback: show on all screens but truncate */}
                     <span className="xs:hidden sm:hidden truncate max-w-[40px]">{m.label}</span>
                   </span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${allDone
-                    ? "bg-green-100 text-green-700"
-                    : active
-                      ? "bg-green-50 text-green-700"
-                      : "bg-gray-100 text-gray-500"
-                    }`}>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${allDone
+                      ? "bg-green-100 text-green-700"
+                      : active
+                        ? "bg-green-50 text-green-700"
+                        : "bg-gray-100 text-gray-500"
+                      }`}
+                  >
                     {answered}/{total}
                   </span>
                 </button>
@@ -946,10 +1411,12 @@ export default function ExamPage() {
         </div>
 
         {/* Overall progress */}
-        <div className="max-w-3xl mx-auto px-4 pb-2.5">
-          <div className="flex items-center justify-between text-xs text-gray-400 mb-1.5">
-            <span>Umumiy: {totalAnswered}/{totalAll}</span>
-            <span className="font-semibold text-gray-500">{progressPct}%</span>
+        <div className="max-w-3xl mx-auto px-4 pb-2">
+          <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
+            <span>
+              Umumiy: {totalAnswered}/{totalAll}
+            </span>
+            <span className="font-bold text-gray-600">{progressPct}%</span>
           </div>
           <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div
@@ -963,21 +1430,20 @@ export default function ExamPage() {
         </div>
       </div>
 
-      {/* ── Section header ── */}
+      {/* Section header */}
       <div className={`border-b ${meta.bg} ${meta.border} py-2 px-4`}>
         <div className="max-w-3xl mx-auto flex items-center gap-2">
           <span className={meta.color}>{meta.icon}</span>
-          <span className={`text-sm font-semibold ${meta.color}`}>{CATEGORY_META[activeCategory].label === "JS" ? "JavaScript" : meta.label} Bo'limi</span>
-          <span className="text-xs text-gray-400 ml-auto">
-            {catIds.length === 0
-              ? "Bu bo'limda savol yo'q"
-              : `Savol ${currentIdx + 1} / ${catIds.length}`}
+          <span className={`text-xs sm:text-sm font-bold ${meta.color}`}>
+            {meta.label === "JS" ? "JavaScript" : meta.label} Bo'limi
+          </span>
+          <span className="text-xs text-gray-500 font-medium ml-auto">
+            {catIds.length === 0 ? "Bu bo'limda savol yo'q" : `Savol ${currentIdx + 1} / ${catIds.length}`}
           </span>
         </div>
       </div>
 
-      {/* ── Question area ── */}
-      {/* pb-28 ensures content isn't hidden behind fixed nav on mobile */}
+      {/* Question area */}
       <div className="flex-1 py-4 sm:py-6 px-3 sm:px-4 pb-28">
         <div className="max-w-3xl mx-auto">
           {currentQ && currentQ.type === "mcq" ? (
@@ -989,9 +1455,7 @@ export default function ExamPage() {
                 selectedOption={
                   (session.answers[currentQ.id] as { type: "mcq"; selected: number | null })?.selected ?? null
                 }
-                onSelect={(opt) =>
-                  updateAnswer(currentQ.id, { type: "mcq", selected: opt })
-                }
+                onSelect={(opt) => updateAnswer(currentQ.id, { type: "mcq", selected: opt })}
               />
             </div>
           ) : currentQ && currentQ.type === "drag" ? (
@@ -999,12 +1463,12 @@ export default function ExamPage() {
               <DragDropCard
                 question={currentQ}
                 questionNumber={currentIdx + 1}
-                currentOrder={session.answers[currentQ.id]?.type === "dragdrop"
-                  ? (session.answers[currentQ.id] as { type: "dragdrop"; order: number[] }).order
-                  : session.dragOrders[currentQ.id] ?? currentQ.tokens.map((_, i) => i)}
-                onReorder={(order) =>
-                  updateAnswer(currentQ.id, { type: "dragdrop", order, touched: true })
+                currentOrder={
+                  session.answers[currentQ.id]?.type === "dragdrop"
+                    ? (session.answers[currentQ.id] as { type: "dragdrop"; order: number[] }).order
+                    : session.dragOrders[currentQ.id] ?? currentQ.tokens.map((_, i) => i)
                 }
+                onReorder={(order) => updateAnswer(currentQ.id, { type: "dragdrop", order, touched: true })}
               />
             </div>
           ) : currentQ ? (
@@ -1020,15 +1484,14 @@ export default function ExamPage() {
         </div>
       </div>
 
-      {/* ── Navigation bar (fixed bottom) ── */}
+      {/* Fixed bottom navigation */}
       <div className="anim-slide-up bg-white border-t-[1.5px] border-gray-100 px-3 sm:px-4 py-3 fixed bottom-0 left-0 right-0 z-20 shadow-[0_-4px_20px_rgba(0,100,0,0.08)]">
         <div className="max-w-3xl mx-auto flex items-center gap-2 sm:gap-3">
-
           {/* Prev button */}
           <button
             onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}
             disabled={currentIdx === 0}
-            className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 border-[1.5px] border-gray-200 rounded-2xl text-sm font-semibold text-gray-600 disabled:opacity-35 hover:border-green-700 hover:text-green-700 transition-colors whitespace-nowrap"
+            className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 border-[1.5px] border-gray-200 rounded-2xl text-xs sm:text-sm font-bold text-gray-600 disabled:opacity-35 hover:border-green-700 hover:text-green-700 transition-colors whitespace-nowrap"
           >
             <ChevronLeft size={15} />
             <span className="hidden sm:inline">Oldingi</span>
@@ -1043,7 +1506,7 @@ export default function ExamPage() {
                 <button
                   key={id}
                   onClick={() => setCurrentIdx(i)}
-                  className={`flex-shrink-0 w-7 h-7 rounded-full text-[11px] font-semibold transition-colors ${isActive
+                  className={`flex-shrink-0 w-7 h-7 rounded-full text-[11px] font-bold transition-colors ${isActive
                     ? "bg-green-700 text-white shadow-sm"
                     : answered
                       ? "bg-green-100 text-green-700 border-[1.5px] border-green-300"
@@ -1060,18 +1523,18 @@ export default function ExamPage() {
           {currentIdx < catIds.length - 1 ? (
             <button
               onClick={() => setCurrentIdx((i) => Math.min(catIds.length - 1, i + 1))}
-              className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 bg-green-700 hover:bg-green-800 rounded-2xl text-sm font-semibold text-white transition-colors whitespace-nowrap shadow-sm"
+              className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 bg-green-700 hover:bg-green-800 rounded-2xl text-xs sm:text-sm font-bold text-white transition-colors whitespace-nowrap shadow-sm"
             >
               <span className="hidden sm:inline">Keyingi</span>
               <ChevronRight size={15} />
             </button>
-          ) : activeCategory !== "JavaScript" ? (
+          ) : activeCategories.indexOf(activeCategory) < activeCategories.length - 1 ? (
             <button
               onClick={() => {
-                const nextCat = CATEGORIES[CATEGORIES.indexOf(activeCategory) + 1];
+                const nextCat = activeCategories[activeCategories.indexOf(activeCategory) + 1];
                 switchCategory(nextCat);
               }}
-              className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 bg-green-700 hover:bg-green-800 rounded-2xl text-sm font-semibold text-white transition-colors whitespace-nowrap shadow-sm"
+              className="flex-shrink-0 flex items-center gap-1 px-3 sm:px-4 py-2.5 bg-green-700 hover:bg-green-800 rounded-2xl text-xs sm:text-sm font-bold text-white transition-colors whitespace-nowrap shadow-sm"
             >
               <span className="hidden sm:inline">Keyingi Bo'lim</span>
               <span className="sm:hidden">Bo'lim</span>
@@ -1080,7 +1543,7 @@ export default function ExamPage() {
           ) : (
             <button
               onClick={() => setConfirmSubmit(true)}
-              className="flex-shrink-0 flex items-center gap-1.5 px-4 sm:px-5 py-2.5 bg-green-700 hover:bg-green-800 rounded-2xl text-sm font-semibold text-white transition-colors whitespace-nowrap shadow-sm"
+              className="flex-shrink-0 flex items-center gap-1.5 px-4 sm:px-5 py-2.5 bg-green-700 hover:bg-green-800 rounded-2xl text-xs sm:text-sm font-bold text-white transition-colors whitespace-nowrap shadow-sm"
             >
               <CheckCircle size={15} />
               Topshirish
@@ -1089,12 +1552,10 @@ export default function ExamPage() {
         </div>
       </div>
 
-      {/* Topshirish tugmasi ilgari FAQAT JS bo'limining oxirgi savolida
-          chiqardi — JS'ni yechmoqchi bo'lmagan talaba ham butun bo'limni
-          bosib o'tishga majbur edi. Endi u doim qo'l ostida. */}
+      {/* Floating Finish Button */}
       <button
         onClick={() => setConfirmSubmit(true)}
-        className="fixed right-3 top-3 z-30 flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white/95 px-3 py-1.5 text-xs font-medium text-gray-600 shadow-sm backdrop-blur transition-colors hover:border-green-700 hover:text-green-700 sm:right-4"
+        className="fixed right-3 top-3 z-30 flex items-center gap-1.5 rounded-xl border border-gray-300 bg-white/95 px-3 py-1.5 text-xs font-bold text-gray-700 shadow-sm backdrop-blur transition-colors hover:border-green-700 hover:text-green-700 sm:right-4"
       >
         <CheckCircle size={13} />
         Imtihonni yakunlash
@@ -1102,27 +1563,26 @@ export default function ExamPage() {
 
       {confirmSubmit && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6">
-          <div className="anim-scale-in w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-gray-900">Imtihonni yakunlaysizmi?</h3>
+          <div className="anim-scale-in w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-bold text-gray-900">Imtihonni yakunlaysizmi?</h3>
 
             {totalAnswered < totalAll ? (
-              <p className="mt-2 text-sm leading-relaxed text-gray-600">
-                <strong className="text-red-700">{totalAll - totalAnswered} ta savol</strong> javobsiz
-                qoladi va ular uchun ball berilmaydi.
+              <p className="mt-2 text-xs leading-relaxed text-gray-600">
+                <strong className="text-red-700">{totalAll - totalAnswered} ta savol</strong> javobsiz qoladi va ular uchun ball berilmaydi.
               </p>
             ) : (
-              <p className="mt-2 text-sm text-gray-600">Barcha savollarga javob berdingiz.</p>
+              <p className="mt-2 text-xs text-gray-600">Barcha savollarga javob berdingiz.</p>
             )}
 
-            <div className="mt-3 space-y-1.5 rounded-lg bg-gray-50 p-3 text-xs">
+            <div className="mt-3 space-y-1.5 rounded-2xl bg-gray-50 p-3 text-xs">
               {CATEGORIES.map((cat) => {
                 const answered = catAnsweredCount(cat);
                 const total = catTotalCount(cat);
                 if (total === 0) return null;
                 return (
                   <div key={cat} className="flex items-center justify-between">
-                    <span className="text-gray-600">{cat}</span>
-                    <span className={answered === total ? "font-medium text-green-700" : "font-medium text-gray-500"}>
+                    <span className="text-gray-600 font-medium">{cat}</span>
+                    <span className={answered === total ? "font-bold text-green-700" : "font-semibold text-gray-500"}>
                       {answered}/{total}
                     </span>
                   </div>
@@ -1130,20 +1590,23 @@ export default function ExamPage() {
               })}
             </div>
 
-            <p className="mt-3 text-xs text-gray-500">
-              Yakunlangandan keyin javoblarni o'zgartirib bo'lmaydi.
+            <p className="mt-3 text-[11px] text-gray-500">
+              Yakunlangandan keyin javoblarni qayta o'zgartirib bo'lmaydi.
             </p>
 
             <div className="mt-4 flex gap-2">
               <button
                 onClick={() => setConfirmSubmit(false)}
-                className="flex-1 rounded-lg border border-gray-300 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50"
+                className="flex-1 rounded-xl border border-gray-300 py-2.5 text-xs font-bold text-gray-600 transition-colors hover:bg-gray-50"
               >
                 Davom etish
               </button>
               <button
-                onClick={() => { setConfirmSubmit(false); handleSubmit(); }}
-                className="flex-1 rounded-lg bg-green-700 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-green-800"
+                onClick={() => {
+                  setConfirmSubmit(false);
+                  handleSubmit();
+                }}
+                className="flex-1 rounded-xl bg-green-700 py-2.5 text-xs font-bold text-white transition-colors hover:bg-green-800"
               >
                 Ha, yakunlash
               </button>
