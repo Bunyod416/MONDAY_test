@@ -46,7 +46,7 @@ function canonPy(src: string): string {
     .map((line) =>
       line
         .replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, '"$1"')
-        .replace(/\s*([=+\-*/%:,()\[\]{}])\s*/g, "$1")
+        .replace(/\s*([=+\-*/%:,()[\]{}])\s*/g, "$1")
         .replace(/([A-Za-z0-9_])\s+([A-Za-z0-9_])/g, "$1 $2")
     )
     .join("\n");

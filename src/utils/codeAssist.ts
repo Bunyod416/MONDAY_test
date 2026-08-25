@@ -145,7 +145,7 @@ export function handleEnter(
 
   const closesRightAfter =
     (prevChar === "{" && after.startsWith("}")) ||
-    (lang === "html" && /^<\//.test(after) && /<[a-zA-Z][^<>]*>$/.test(before));
+    (lang === "html" && after.startsWith("</") && /<[a-zA-Z][^<>]*>$/.test(before));
 
   if (closesRightAfter) {
     const inner = "\n" + indent + INDENT;

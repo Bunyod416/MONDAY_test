@@ -5,7 +5,8 @@ import { matchWithNearMiss, langForCategory } from "../utils/answerMatch";
 
 export function calculateExamScore(
   session: ExamSession,
-  questionsList: Question[] = []
+  questionsList: Question[] = [],
+  penaltyPerViolation: number = 1
 ): { earned: number; total: number; rawEarned: number; penalty: number } {
   let rawEarned = 0;
   let total = 0;
@@ -28,15 +29,16 @@ export function calculateExamScore(
         const correctIdx = /^[0-9]+$/.test(String(q.answer))
           ? Number(q.answer)
           : String(q.answer).toUpperCase().charCodeAt(0) - 65;
-        isCorrect = ans.selected !== null && ans.selected === correctIdx;
+        isCorrect = ans.selected !== null && ans.selected !== undefined && ans.selected === correctIdx;
       } else if (q.type === "truefalse" && ans.type === "truefalse") {
-        isCorrect = ans.selected !== null && ans.selected === q.answer;
+        const expectedBool = q.answer === true || String(q.answer).toLowerCase() === "true";
+        isCorrect = ans.selected !== null && Boolean(ans.selected) === expectedBool;
       } else if ((q.type === "code" || q.type === "fix") && ans.type === q.type) {
-        const match = matchWithNearMiss(ans.value, q.accepted, langForCategory(q.category));
+        const match = matchWithNearMiss(ans.value || "", q.accepted || [], langForCategory(q.category));
         isCorrect = match.status === "correct";
       } else if (q.type === "drag" && ans.type === "dragdrop") {
-        if (ans.touched) {
-          const correctOrder = q.correctOrder.map((tok) => q.tokens.indexOf(tok));
+        if (ans.touched && Array.isArray(ans.order)) {
+          const correctOrder = (q.correctOrder || []).map((tok) => (q.tokens || []).indexOf(tok));
           isCorrect = JSON.stringify(ans.order) === JSON.stringify(correctOrder);
         }
       }
@@ -47,14 +49,19 @@ export function calculateExamScore(
     }
   }
 
-  const penalty = Math.min(session.violationCount ?? 0, rawEarned);
+  const penalty = Math.min((session.violationCount ?? 0) * penaltyPerViolation, rawEarned);
   const earned = Math.max(0, rawEarned - penalty);
 
   return { earned, total, rawEarned, penalty };
 }
 
-export async function submitExamToSupabase(session: ExamSession, questionsList: Question[] = []) {
-  const { earned, total } = calculateExamScore(session, questionsList);
+export async function submitExamToSupabase(
+  session: ExamSession,
+  questionsList: Question[] = [],
+  penaltyPerViolation: number = 1
+) {
+  const { earned, total } = calculateExamScore(session, questionsList, penaltyPerViolation);
+
 
   const answersPayload: any = { ...session.answers };
   if (session.groupCode) {

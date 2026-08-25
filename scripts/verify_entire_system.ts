@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { questions } from "../src/utils/data/questions";
+import { clampConfig } from "../src/utils/config";
 import { createSession } from "../src/utils/session";
 import { calculateExamScore, submitExamToSupabase } from "../src/services/submissionService";
 import { fetchGroupByCode, getGroupSubmissionsCount } from "../src/services/groupService";
@@ -26,11 +27,17 @@ async function verifyAll() {
   const { data: rData, error: rErr } = await supabase.from("results").select("id").limit(5);
   console.log("   - `results` jadvali:", rErr ? `❌ ${rErr.message}` : `✅ Ulandi (${rData?.length} ta natija saqlangan)\n`);
 
-  // 2. Real Group GRP-910 (apple) Verification
-  console.log("2️⃣ Admin tomonidan yaratilgan `GRP-910` guruhini tekshirish:");
-  const group = await fetchGroupByCode("GRP-910");
+  // 2. Real Group Verification
+  console.log("2️⃣ Admin tomonidan yaratilgan guruhni tekshirish:");
+  let group = await fetchGroupByCode("GRP-910");
   if (!group) {
-    throw new Error("GRP-910 guruhi bazadan topilmadi!");
+    let allGroups = await supabase.from("exam_groups").select("*").limit(1);
+    if (allGroups.data && allGroups.data.length > 0) {
+      group = await fetchGroupByCode(allGroups.data[0].group_code);
+    }
+  }
+  if (!group) {
+    throw new Error("Guruh bazadan topilmadi!");
   }
   console.log(`   - Guruh nomi: "${group.group_name}"`);
   console.log(`   - Guruh kodi: "${group.group_code}"`);
@@ -48,17 +55,17 @@ async function verifyAll() {
   const wrongCheck = await fetchGroupByCode("WRONG-CODE-999");
   console.log("   - Noto'g'ri kod bilan kirish:", wrongCheck === null ? "✅ Bloklandi (null)" : "❌ Xato");
 
-  const realCheck = await fetchGroupByCode("grp-910");
-  console.log("   - Kichik harflar bilan 'grp-910' yozganda:", realCheck?.group_code === "GRP-910" ? "✅ Tandi va qabul qildi" : "❌ Xato");
+  const realCheck = await fetchGroupByCode(group.group_code.toLowerCase());
+  console.log(`   - Kichik harflar bilan '${group.group_code.toLowerCase()}' yozganda:`, realCheck?.group_code === group.group_code ? "✅ Tandi va qabul qildi" : "❌ Xato");
   console.log("   ✅ Talaba portali tekshiruvi a'lo darajada!\n");
 
   // 4. Exam Session, 5 Question Types & Grading
   console.log("4️⃣ Imtihon Sessiyasi va Baholash (5 ta savol turi):");
   const session = createSession(
     "Shoxruh Rahimov",
-    { counts: group.counts, durationMinutes: group.duration_minutes },
+    clampConfig({ counts: group.counts, durationMinutes: group.duration_minutes }, questions),
     questions,
-    "GRP-910"
+    group.group_code
   );
   console.log(`   - Sessiya yaratildi: Talaba="${session.studentName}", Guruh="${session.groupCode}"`);
 
@@ -109,7 +116,7 @@ async function verifyAll() {
   const groupInAdmin = adminRecord.group_code || adminRecord.answers?._meta?.group_code;
   console.log(`   - Admin qabul qildi: Ism="${adminRecord.student_name}", Ball=${adminRecord.score}/${adminRecord.total_points}, Guruh="${groupInAdmin}"`);
 
-  if (groupInAdmin !== "GRP-910") {
+  if (groupInAdmin !== group.group_code) {
     throw new Error("Guruh kodi mos kelmadi!");
   }
 

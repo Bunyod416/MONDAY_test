@@ -18,37 +18,37 @@ export interface LiveStudentTelemetry {
   lastActiveAt: number;
 }
 
-let liveChannel: ReturnType<typeof supabase.channel> | null = null;
+let globalLiveChannel: ReturnType<typeof supabase.channel> | null = null;
 let lastBroadcastTime = 0;
-const BROADCAST_THROTTLE_MS = 800;
+const BROADCAST_THROTTLE_MS = 500;
 
 export function initLiveMonitoring(studentName: string, groupCode: string) {
-  if (liveChannel) {
-    supabase.removeChannel(liveChannel);
+  if (globalLiveChannel) {
+    supabase.removeChannel(globalLiveChannel);
   }
 
-  const channelId = `live_stream_${groupCode.trim().toUpperCase() || "ALL"}`;
-  liveChannel = supabase.channel(channelId, {
+  const cleanGroup = groupCode.trim().toUpperCase() || "UMUMIY";
+  globalLiveChannel = supabase.channel("exam_live_stream_global", {
     config: {
-      presence: { key: `${studentName}_${Date.now()}` },
+      presence: { key: `student_${studentName}_${Date.now()}` },
     },
   });
 
-  liveChannel
+  globalLiveChannel
     .on("presence", { event: "sync" }, () => {
       // presence synced
     })
     .subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
-        await liveChannel?.track({
+        await globalLiveChannel?.track({
           studentName,
-          groupCode,
+          groupCode: cleanGroup,
           onlineAt: Date.now(),
         });
       }
     });
 
-  return liveChannel;
+  return globalLiveChannel;
 }
 
 export function broadcastStudentLiveState(telemetry: LiveStudentTelemetry) {
@@ -59,12 +59,21 @@ export function broadcastStudentLiveState(telemetry: LiveStudentTelemetry) {
   lastBroadcastTime = now;
 
   try {
-    if (!liveChannel) {
-      liveChannel = supabase.channel(`live_stream_${telemetry.groupCode || "ALL"}`);
-      liveChannel.subscribe();
+    if (!globalLiveChannel) {
+      globalLiveChannel = supabase.channel("exam_live_stream_global");
+      globalLiveChannel.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          globalLiveChannel?.send({
+            type: "broadcast",
+            event: "student_live_telemetry",
+            payload: telemetry,
+          });
+        }
+      });
+      return;
     }
 
-    liveChannel.send({
+    globalLiveChannel.send({
       type: "broadcast",
       event: "student_live_telemetry",
       payload: telemetry,
@@ -75,8 +84,9 @@ export function broadcastStudentLiveState(telemetry: LiveStudentTelemetry) {
 }
 
 export function closeLiveMonitoring() {
-  if (liveChannel) {
-    supabase.removeChannel(liveChannel);
-    liveChannel = null;
+  if (globalLiveChannel) {
+    supabase.removeChannel(globalLiveChannel);
+    globalLiveChannel = null;
   }
 }
+

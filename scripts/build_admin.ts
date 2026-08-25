@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import process from 'process';
 
 const adminRoot = path.resolve(process.cwd(), '../MONDAY_admin');
 

@@ -28,8 +28,9 @@ import {
 import { encodeResult } from "../utils/encoding";
 import {
   saveConfig,
-  totalSelectedQuestions,
   defaultConfig,
+  clampConfig,
+  fetchRemoteExamSettings,
   type ExamConfig,
 } from "../utils/config";
 import { verifyAdminPassword } from "../utils/auth";
@@ -238,6 +239,8 @@ export default function ExamPage() {
 
   const [phase, setPhase] = useState<Phase>("register");
   const [session, setSession] = useState<ExamSession | null>(null);
+  const sessionRef = useRef<ExamSession | null>(null);
+  sessionRef.current = session;
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [registrationError, setRegistrationError] = useState("");
@@ -269,7 +272,7 @@ export default function ExamPage() {
     totalOccupied: 0,
   });
   const [groupCheckStatus, setGroupCheckStatus] = useState<GroupCheckStatus>("idle");
-  const [, setConfig] = useState<ExamConfig>(() => defaultConfig(localQuestions));
+  const [config, setConfig] = useState<ExamConfig>(() => defaultConfig(localQuestions));
 
   // Function to verify group code in real-time
   const checkAndApplyGroup = useCallback(async (code: string) => {
@@ -301,10 +304,11 @@ export default function ExamPage() {
       setGroupCheckStatus("full");
     } else {
       setGroupCheckStatus("found");
-      setConfig({
+      setConfig((prev) => ({
+        ...prev,
         counts: found.counts,
         durationMinutes: found.duration_minutes,
-      });
+      }));
     }
 
     return found;
@@ -352,6 +356,12 @@ export default function ExamPage() {
       }
     });
 
+    fetchRemoteExamSettings().then((remote) => {
+      if (remote) {
+        setConfig((prev) => clampConfig({ ...prev, ...remote }));
+      }
+    });
+
     const params = new URLSearchParams(window.location.search);
     const codeParam = params.get("group") || params.get("g") || "";
     if (codeParam) {
@@ -360,6 +370,7 @@ export default function ExamPage() {
       checkAndApplyGroup(clean);
     }
   }, [checkAndApplyGroup]);
+
 
   // 2. Realtime Listener for Group and Submissions
   useEffect(() => {
@@ -402,10 +413,11 @@ export default function ExamPage() {
           const clean = updated.group_code.trim().toUpperCase();
           if (groupCode.trim().toUpperCase() === clean) {
             setGroupInfo(updated);
-            setConfig({
+            setConfig((prev) => ({
+              ...prev,
               counts: updated.counts,
               durationMinutes: updated.duration_minutes,
-            });
+            }));
             if (!updated.is_active) {
               setGroupCheckStatus("inactive");
             } else {
@@ -453,7 +465,7 @@ export default function ExamPage() {
 
   // Session recovery (F5 / Refresh)
   useEffect(() => {
-    const s = loadSession(questionsList);
+    const s = loadSession();
     if (s) {
       setSession(s);
       if (s.groupCode) {
@@ -547,6 +559,7 @@ export default function ExamPage() {
 
   const registerViolation = useCallback(() => {
     fsViolations.current += 1;
+    const maxLimit = config.maxViolations || 3;
     setSession((prev) => {
       if (!prev) return prev;
       const updated = {
@@ -554,13 +567,13 @@ export default function ExamPage() {
         violationCount: fsViolations.current,
         pausedAt: prev.pausedAt ?? Date.now(),
       };
-      if (updated.violationCount >= MAX_VIOLATIONS) blockStudent(updated.studentName);
+      if (updated.violationCount >= maxLimit) blockStudent(updated.studentName);
       persist(updated);
       return updated;
     });
-    if (fsViolations.current >= MAX_VIOLATIONS) setFsBlocked(true);
+    if (fsViolations.current >= maxLimit) setFsBlocked(true);
     else setFsWarning(true);
-  }, [persist]);
+  }, [persist, config.maxViolations]);
 
   const registerBackgroundViolation = useCallback(() => {
     if (backgroundViolationLock.current) return;
@@ -610,12 +623,14 @@ export default function ExamPage() {
       return;
     }
     if (phase !== "exam") return;
+    if (!config.enforceFullscreen) return;
     if (!document.fullscreenElement) {
       registerViolation();
     } else {
       setFsWarning(false);
     }
-  }, [phase, registerViolation]);
+  }, [phase, registerViolation, config.enforceFullscreen]);
+
 
   useEffect(() => {
     document.addEventListener("fullscreenchange", onFsChange);
@@ -733,6 +748,7 @@ export default function ExamPage() {
     }
 
     const groupConfig: ExamConfig = {
+      ...config,
       counts: activeGroup.counts,
       durationMinutes: activeGroup.duration_minutes,
     };
@@ -761,7 +777,12 @@ export default function ExamPage() {
     setSession(s);
     const firstCategory = CATEGORIES.find((category) => (s.categoryOrder[category] ?? []).length > 0);
     if (firstCategory) setActiveCategory(firstCategory);
-    setPhase("fullscreen");
+
+    if (savedConfig.enforceFullscreen === false) {
+      setPhase("exam");
+    } else {
+      setPhase("fullscreen");
+    }
   }
 
   async function handleStartExam() {
@@ -806,53 +827,63 @@ export default function ExamPage() {
     persist(updated);
   }
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
     ignoreFullscreenChange.current = true;
-    let finalSession: ExamSession | null = null;
-    setSession((prev) => {
-      if (!prev) return prev;
-      const updated: ExamSession = { ...prev, submitted: true };
-      finalSession = updated;
-      persist(updated);
-      return updated;
-    });
+    const currentSession = sessionRef.current || session || loadSession();
+    if (!currentSession) return;
+
+    const updatedSession: ExamSession = {
+      ...currentSession,
+      submitted: true,
+    };
+
+    setSession(updatedSession);
+    persist(updatedSession);
+    sessionRef.current = updatedSession;
+
     setPhase("submitted");
     setDownloadCountdown(5);
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => { });
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => { });
+    }
 
-    if (finalSession) {
-      const sess = finalSession as ExamSession;
-      const totQuestions = CATEGORIES.reduce(
-        (sum, c) => sum + (sess.categoryOrder[c]?.length ?? 0),
-        0
-      );
+    const totQuestions = CATEGORIES.reduce(
+      (sum, c) => sum + (updatedSession.categoryOrder[c]?.length ?? 0),
+      0
+    );
 
+    try {
       broadcastStudentLiveState({
-        studentName: sess.studentName,
-        groupCode: sess.groupCode || "",
+        studentName: updatedSession.studentName,
+        groupCode: updatedSession.groupCode || "",
         category: activeCategory,
         questionIndex: currentIdx + 1,
         questionId: 0,
         categoryTotal: 0,
-        answeredCount: Object.keys(sess.answers).filter((k) => k !== "_meta").length,
+        answeredCount: Object.keys(updatedSession.answers).filter((k) => k !== "_meta").length,
         totalQuestions: totQuestions,
         progressPercent: 100,
         remainingSeconds: 0,
-        elapsedSeconds: Math.max(0, Math.floor((Date.now() - sess.startTime) / 1000)),
-        violationCount: sess.violationCount || 0,
+        elapsedSeconds: Math.max(0, Math.floor((Date.now() - updatedSession.startTime) / 1000)),
+        violationCount: updatedSession.violationCount || 0,
         status: "submitted",
         lastActiveAt: Date.now(),
       });
-
-      setSubmitStatus("submitting");
-      submitExamToSupabase(sess, questionsList)
-        .then(() => setSubmitStatus("success"))
-        .catch((err) => {
-          console.error("Supabase submission failed:", err);
-          setSubmitStatus("error");
-        });
+    } catch (e) {
+      console.warn("Broadcast error:", e);
     }
-  }, [persist, questionsList, activeCategory, currentIdx]);
+
+    setSubmitStatus("submitting");
+    try {
+      const res = await submitExamToSupabase(updatedSession, questionsList, config.penaltyPerViolation ?? 1);
+      console.log("Exam submitted successfully to Supabase:", res);
+      setSubmitStatus("success");
+    } catch (err) {
+      console.error("Supabase submission failed:", err);
+      setSubmitStatus("error");
+    }
+  }, [session, persist, questionsList, activeCategory, currentIdx, config.penaltyPerViolation]);
+
 
   useEffect(() => {
     if (phase !== "submitted" || downloadCountdown <= 0) return;
@@ -1037,7 +1068,7 @@ export default function ExamPage() {
                   </div>
                   <div>
                     <span className="text-[11px] text-emerald-600 block">Savollar:</span>
-                    <strong>{totalSelectedQuestions({ counts: groupInfo.counts, durationMinutes: groupInfo.duration_minutes })} ta</strong>
+                    <strong>{Object.values(groupInfo.counts || {}).reduce((s, n) => s + (Number(n) || 0), 0)} ta</strong>
                   </div>
                   <div>
                     <span className="text-[11px] text-emerald-600 block">Talabalar Sig'imi:</span>

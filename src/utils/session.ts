@@ -56,7 +56,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Buzilgan yoki eski formatdagi ma'lumot oq ekranga olib kelmasligi kerak —
  * shuning uchun har bir maydon alohida validatsiya qilinadi.
  */
-export function loadSession(questionsList: Question[] = questions): ExamSession | null {
+export function loadSession(): ExamSession | null {
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(STORAGE_KEY);
@@ -73,19 +73,18 @@ export function loadSession(questionsList: Question[] = questions): ExamSession 
     if (!isRecord(parsed.answers)) return null;
     if (!isRecord(parsed.categoryOrder)) return null;
 
-    const knownIds = questionsList.length > 0 ? new Set(questionsList.map((q) => q.id)) : null;
     const categoryOrder = {} as Record<Category, number[]>;
     for (const cat of CATEGORIES) {
       const ids = parsed.categoryOrder[cat];
       categoryOrder[cat] = Array.isArray(ids)
-        ? ids.filter((id): id is number => typeof id === "number" && (!knownIds || knownIds.has(id)))
+        ? ids.filter((id): id is number => typeof id === "number" && Number.isFinite(id))
         : [];
     }
 
     const answers: Record<number, SessionAnswer> = {};
     for (const [key, value] of Object.entries(parsed.answers)) {
       const id = Number(key);
-      if (isNaN(id) || (knownIds && !knownIds.has(id)) || !isRecord(value)) continue;
+      if (isNaN(id) || !Number.isFinite(id) || !isRecord(value)) continue;
       answers[id] = value as unknown as SessionAnswer;
     }
 
@@ -159,10 +158,14 @@ export function createSession(
   const dragOrders: Record<number, number[]> = {};
   const answers: Record<number, SessionAnswer> = {};
 
+  const shouldShuffleQuestions = config.shuffleQuestions !== false;
+  const shouldShuffleOptions = config.shuffleOptions !== false;
+
   for (const cat of CATEGORIES) {
     const pool = questionsList.filter((q) => q.category === cat);
     const count = Math.max(0, Math.min(pool.length, Math.floor(config.counts[cat] ?? 0)));
-    categoryOrder[cat] = shuffleArray(pool.map((q) => q.id)).slice(0, count);
+    const ids = pool.map((q) => q.id);
+    categoryOrder[cat] = shouldShuffleQuestions ? shuffleArray(ids).slice(0, count) : ids.slice(0, count);
   }
 
   // FAQAT tanlangan savollar uchun holat yaratiladi.
@@ -172,7 +175,8 @@ export function createSession(
     if (!selectedIds.has(q.id)) continue;
 
     if (q.type === "mcq") {
-      optionOrders[q.id] = shuffleArray(q.options.map((_, i) => i));
+      const naturalOrder = q.options.map((_, i) => i);
+      optionOrders[q.id] = shouldShuffleOptions ? shuffleArray(naturalOrder) : naturalOrder;
       answers[q.id] = { type: "mcq", selected: null };
     } else if (q.type === "truefalse") {
       answers[q.id] = { type: "truefalse", selected: null };
@@ -185,6 +189,7 @@ export function createSession(
       answers[q.id] = { type: "dragdrop", order, touched: false };
     }
   }
+
 
   return {
     studentName,

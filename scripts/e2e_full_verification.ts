@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { questions } from "../src/utils/data/questions";
+import { clampConfig } from "../src/utils/config";
 import { createSession } from "../src/utils/session";
 import {
   calculateExamScore,
@@ -70,10 +71,10 @@ async function runFullVerification() {
 
   // 3. Test Session Creation & Evaluation
   console.log("3️⃣ Sessiya yaratish va Baholash (Grading) testi:");
-  const cfg = {
+  const cfg = clampConfig({
     counts: { HTML: 2, CSS: 2, JavaScript: 2, Python: 2 },
     durationMinutes: 30,
-  };
+  }, questions);
   const session = createSession("Ali Valiyev", cfg, questions, "E2E-TEST-77");
   console.log(
     `   - Sessiya yaratildi: Talaba="${session.studentName}", Guruh="${session.groupCode}"`,

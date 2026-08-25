@@ -7,6 +7,7 @@ import { verifyAdminPassword } from "../utils/auth";
 import {
   loadConfig,
   saveConfig,
+  saveRemoteExamSettings,
   maxCount,
   MAX_DURATION_MINUTES,
   totalSelectedQuestions,
@@ -49,7 +50,7 @@ const CATEGORY_COLORS: Record<Category, string> = {
   Python: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 
-export default function AdminPage() {
+export default function AdminPage({ onBack }: { onBack?: () => void }) {
   const [authenticated, setAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState(false);
@@ -91,9 +92,11 @@ export default function AdminPage() {
     }));
   }
 
-  function handleSaveConfig() {
-    setConfig(saveConfig(config));
+  async function handleSaveConfig() {
+    const saved = saveConfig(config);
+    setConfig(saved);
     setConfigSaved(true);
+    await saveRemoteExamSettings(saved);
   }
 
   function handleFileDrop(e: React.DragEvent) {
@@ -285,10 +288,19 @@ export default function AdminPage() {
             </div>
             <button
               type="submit"
-              className="w-full bg-green-700 hover:bg-green-800 text-white font-semibold py-3 rounded-xl transition-colors text-sm"
+              className="w-full bg-green-700 hover:bg-green-800 text-white font-semibold py-3 rounded-xl transition-colors text-sm cursor-pointer"
             >
               Kirish
             </button>
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="w-full text-center text-xs text-gray-500 hover:text-gray-800 font-semibold py-2 transition-colors cursor-pointer"
+              >
+                ← Imtihon sahifasiga qaytish
+              </button>
+            )}
           </form>
         </div>
       </div>
@@ -303,12 +315,22 @@ export default function AdminPage() {
             <h1 className="text-xl font-semibold tracking-wide">Admin Panel</h1>
             <p className="text-green-100 text-xs mt-0.5">Imtihon natijalarini dekodlash</p>
           </div>
-          <button
-            onClick={() => setAuthenticated(false)}
-            className="text-green-100 hover:text-white text-sm border border-green-500 hover:border-white px-3 py-1.5 rounded-lg transition-colors"
-          >
-            Chiqish
-          </button>
+          <div className="flex items-center gap-3">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="text-green-100 hover:text-white text-sm border border-green-500 hover:border-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                ← Imtihonga qaytish
+              </button>
+            )}
+            <button
+              onClick={() => setAuthenticated(false)}
+              className="text-green-100 hover:text-white text-sm border border-green-500 hover:border-white px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+            >
+              Chiqish
+            </button>
+          </div>
         </div>
       </div>
 

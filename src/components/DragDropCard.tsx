@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { GripVertical } from "lucide-react";
+import { GripVertical, ChevronUp, ChevronDown } from "lucide-react";
 import QuestionHint from "./QuestionHint";
 import type { DragQuestion } from "../utils/data/questions";
 
@@ -20,6 +20,14 @@ export default function DragDropCard({
   const [overIdx, setOverIdx] = useState<number | null>(null);
   const dragItem = useRef<number | null>(null);
 
+  function moveItem(fromPos: number, toPos: number) {
+    if (toPos < 0 || toPos >= currentOrder.length) return;
+    const newOrder = [...currentOrder];
+    const [moved] = newOrder.splice(fromPos, 1);
+    newOrder.splice(toPos, 0, moved);
+    onReorder(newOrder);
+  }
+
   function handleDragStart(pos: number) {
     dragItem.current = pos;
     setDraggingIdx(pos);
@@ -36,10 +44,7 @@ export default function DragDropCard({
       setOverIdx(null);
       return;
     }
-    const newOrder = [...currentOrder];
-    const [moved] = newOrder.splice(dragItem.current, 1);
-    newOrder.splice(pos, 0, moved);
-    onReorder(newOrder);
+    moveItem(dragItem.current, pos);
     setDraggingIdx(null);
     setOverIdx(null);
     dragItem.current = null;
@@ -97,7 +102,7 @@ export default function DragDropCard({
             onDragEnd={handleDragEnd}
             onTouchStart={() => handleTouchStart(pos)}
             onTouchEnd={() => handleTouchEnd(pos)}
-            className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border-2 cursor-grab active:cursor-grabbing transition-colors select-none ${draggingIdx === pos
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 cursor-grab active:cursor-grabbing transition-colors select-none ${draggingIdx === pos
                 ? "opacity-40 border-green-700 bg-green-50"
                 : overIdx === pos
                   ? "border-green-700 bg-green-50 shadow-md"
@@ -105,8 +110,28 @@ export default function DragDropCard({
               }`}
           >
             <GripVertical size={16} className="text-gray-400 flex-shrink-0" />
-            <span className="text-gray-500 w-5 text-xs">{pos + 1}.</span>
-            <span className="text-gray-800 flex-1">{question.tokens[lineIdx]}</span>
+            <span className="text-gray-500 w-5 text-xs font-sans font-bold">{pos + 1}.</span>
+            <span className="text-gray-800 flex-1 text-xs sm:text-sm">{question.tokens[lineIdx]}</span>
+            <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+              <button
+                type="button"
+                disabled={pos === 0}
+                onClick={() => moveItem(pos, pos - 1)}
+                className="p-1 rounded-md text-gray-400 hover:text-green-800 hover:bg-green-100/70 disabled:opacity-20 disabled:hover:bg-transparent transition-colors cursor-pointer"
+                title="Yuqoriga surish"
+              >
+                <ChevronUp size={14} />
+              </button>
+              <button
+                type="button"
+                disabled={pos === currentOrder.length - 1}
+                onClick={() => moveItem(pos, pos + 1)}
+                className="p-1 rounded-md text-gray-400 hover:text-green-800 hover:bg-green-100/70 disabled:opacity-20 disabled:hover:bg-transparent transition-colors cursor-pointer"
+                title="Pastga surish"
+              >
+                <ChevronDown size={14} />
+              </button>
+            </div>
           </div>
         ))}
       </div>

@@ -46,7 +46,7 @@ export async function fetchGroupByCode(code: string): Promise<ExamGroup | null> 
       saveLocalGroup(g);
       return g;
     }
-  } catch (err) {
+  } catch {
     // Supabase table may not exist yet
   }
 
@@ -81,7 +81,7 @@ export async function fetchAllGroups(): Promise<ExamGroup[]> {
       saveAllLocalGroups(parsed);
       return parsed;
     }
-  } catch (err) {
+  } catch {
     // ignore
   }
 
@@ -102,13 +102,17 @@ export async function createOrUpdateGroup(group: Partial<ExamGroup> & { group_co
   };
 
   try {
-    await supabase.from("exam_groups").upsert({
-      ...newGroup,
-      counts: JSON.stringify(newGroup.counts),
-    });
+    await supabase.from("exam_groups").upsert(
+      {
+        ...newGroup,
+        counts: newGroup.counts,
+      },
+      { onConflict: "group_code" }
+    );
   } catch {
     // ignore if table does not exist
   }
+
 
   saveLocalGroup(newGroup);
   broadcastRealtimeEvent("group_updated", newGroup);
