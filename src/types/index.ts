@@ -1,10 +1,6 @@
 import type { Category } from "../utils/data/questions";
 import type { SessionAnswer } from "../utils/session";
 
-export type ViewType = "exam" | "admin";
-
-export type TabType = "dashboard" | "results" | "groups" | "questions" | "decoder";
-
 export type ExamGroup = {
   id?: number | string;
   group_name: string;

@@ -33,7 +33,7 @@ const headers = [
   'broken_code'
 ];
 
-const rows = questions.map((q: any) => {
+const rows = questions.map((q: Record<string, unknown>) => {
   return [
     q.id,
     q.type,

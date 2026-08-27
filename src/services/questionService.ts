@@ -13,7 +13,7 @@ export async function fetchQuestions(): Promise<Question[]> {
       return defaultQuestions;
     }
 
-    return data.map((row: any): Question => {
+    return data.map((row: Record<string, unknown>): Question => {
       let answerVal = row.answer;
       if (row.type === "truefalse") {
         answerVal = row.answer === "true" || row.answer === true;
@@ -21,20 +21,20 @@ export async function fetchQuestions(): Promise<Question[]> {
 
       return {
         id: Number(row.id),
-        type: row.type,
-        category: row.category,
-        topic: row.topic,
-        question: row.question,
-        options: row.options || undefined,
+        type: row.type as Question["type"],
+        category: row.category as Question["category"],
+        topic: String(row.topic || ""),
+        question: String(row.question || ""),
+        options: (row.options as string[] | undefined) || undefined,
         answer: answerVal,
-        hint: row.hint || "",
+        hint: String(row.hint || ""),
         points: Number(row.points) || 1,
-        placeholder: row.placeholder || undefined,
-        accepted: row.accepted || undefined,
-        tokens: row.tokens || undefined,
-        correctOrder: row.correct_order || row.correctOrder || undefined,
-        brokenCode: row.broken_code || row.brokenCode || undefined,
-      } as Question;
+        placeholder: (row.placeholder as string | undefined) || undefined,
+        accepted: (row.accepted as string[] | undefined) || undefined,
+        tokens: (row.tokens as string[] | undefined) || undefined,
+        correctOrder: (row.correct_order || row.correctOrder) as string[] | undefined,
+        brokenCode: (row.broken_code || row.brokenCode) as string | undefined,
+      } as unknown as Question;
     });
   } catch (err) {
     console.error("Failed to load questions from Supabase, using local:", err);

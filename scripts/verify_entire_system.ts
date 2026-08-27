@@ -3,7 +3,7 @@ import { questions } from "../src/utils/data/questions";
 import { clampConfig } from "../src/utils/config";
 import { createSession } from "../src/utils/session";
 import { calculateExamScore, submitExamToSupabase } from "../src/services/submissionService";
-import { fetchGroupByCode, getGroupSubmissionsCount } from "../src/services/groupService";
+import { fetchGroupByCode } from "../src/services/groupService";
 
 const supabaseUrl = "https://hykqlcvrmfieaosnlrlj.supabase.co";
 const supabaseAnonKey =
@@ -18,7 +18,7 @@ async function verifyAll() {
 
   // 1. Database Connection & Tables Check
   console.log("1️⃣ Supabase Jadvallari va Ulanish:");
-  const { data: qData, error: qErr } = await supabase.from("questions").select("id").limit(5);
+  const { error: qErr } = await supabase.from("questions").select("id").limit(5);
   console.log("   - `questions` jadvali:", qErr ? `❌ ${qErr.message}` : `✅ Ulandi (${questions.length} ta savol)`);
 
   const { data: gData, error: gErr } = await supabase.from("exam_groups").select("*");
@@ -31,7 +31,7 @@ async function verifyAll() {
   console.log("2️⃣ Admin tomonidan yaratilgan guruhni tekshirish:");
   let group = await fetchGroupByCode("GRP-910");
   if (!group) {
-    let allGroups = await supabase.from("exam_groups").select("*").limit(1);
+    const allGroups = await supabase.from("exam_groups").select("*").limit(1);
     if (allGroups.data && allGroups.data.length > 0) {
       group = await fetchGroupByCode(allGroups.data[0].group_code);
     }

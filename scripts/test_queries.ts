@@ -21,8 +21,9 @@ async function testQueries() {
     .limit(10);
   console.log("q2 all results:", q2.data?.length);
   if (q2.data) {
-    q2.data.forEach((r: any) => {
-      console.log(`id: ${r.id}, meta_group_code:`, r.answers?._meta?.group_code);
+    q2.data.forEach((r: Record<string, unknown>) => {
+      const answers = r.answers as { _meta?: { group_code?: string } } | undefined;
+      console.log(`id: ${r.id}, meta_group_code:`, answers?._meta?.group_code);
     });
   }
 }

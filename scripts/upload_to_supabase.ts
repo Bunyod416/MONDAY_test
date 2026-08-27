@@ -9,7 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 async function upload() {
   console.log(`Uploading ${questions.length} questions to Supabase...`);
 
-  const records = questions.map((q: any) => ({
+  const records = questions.map((q: Record<string, unknown>) => ({
     id: q.id,
     type: q.type,
     category: q.category,
@@ -26,7 +26,7 @@ async function upload() {
     broken_code: q.brokenCode || null
   }));
 
-  const { data, error } = await supabase.from('questions').upsert(records, { onConflict: 'id' });
+  const { error } = await supabase.from('questions').upsert(records, { onConflict: 'id' });
 
   if (error) {
     console.error('Upload failed:', error);

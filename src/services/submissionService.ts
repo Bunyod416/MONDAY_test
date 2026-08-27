@@ -63,12 +63,12 @@ export async function submitExamToSupabase(
   const { earned, total } = calculateExamScore(session, questionsList, penaltyPerViolation);
 
 
-  const answersPayload: any = { ...session.answers };
+  const answersPayload: Record<string, unknown> = { ...session.answers };
   if (session.groupCode) {
     answersPayload._meta = { group_code: session.groupCode };
   }
 
-  const payload: any = {
+  const payload: Record<string, unknown> = {
     student_name: session.studentName,
     score: earned,
     total_points: total,
@@ -87,11 +87,15 @@ export async function submitExamToSupabase(
   }
 
   // 1. Try insert with group_code
-  let { data, error } = await supabase
+  let dataResult = null;
+  const initialInsert = await supabase
     .from("results")
     .insert(payload)
     .select()
     .single();
+
+  let error = initialInsert.error;
+  dataResult = initialInsert.data;
 
   // 2. If group_code column doesn't exist in Supabase schema yet, retry without group_code column
   if (error && (error.message?.includes("group_code") || error.code === "PGRST204" || error.code === "42703")) {
@@ -108,6 +112,7 @@ export async function submitExamToSupabase(
       return retry.data;
     }
     error = retry.error;
+    dataResult = retry.data;
   }
 
   if (error) {
@@ -115,18 +120,18 @@ export async function submitExamToSupabase(
     throw error;
   }
 
-  if (data) {
+  if (dataResult) {
     try {
       const channel = supabase.channel("exam_sync_realtime");
       channel.send({
         type: "broadcast",
         event: "new_submission",
-        payload: data,
+        payload: dataResult,
       });
     } catch {
       // ignore
     }
   }
 
-  return data;
+  return dataResult;
 }

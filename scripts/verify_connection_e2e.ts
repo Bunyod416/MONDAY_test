@@ -47,7 +47,7 @@ async function runEndToEndVerification() {
   const testStudentName = `Test Talaba (Ulanish Tekshiruvi)`;
   const testGroupCode = `CONN-TEST-99`;
   
-  const testPayload: any = {
+  const testPayload: Record<string, unknown> = {
     student_name: testStudentName,
     score: 115,
     total_points: 120,

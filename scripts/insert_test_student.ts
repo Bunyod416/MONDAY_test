@@ -11,7 +11,10 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 async function main() {
   // 1. Check existing groups
-  const { data: groups, error: groupErr } = await supabase.from("exam_groups").select("*");
+  const { data: groups, error: groupError } = await supabase.from("exam_groups").select("*");
+  if (groupError) {
+    console.error("Error fetching groups:", groupError);
+  }
   console.log("Existing groups in Supabase:", groups);
 
   let targetGroupCode = "FRONTEND-01";
@@ -78,7 +81,7 @@ async function main() {
   session.violationCount = 0;
   const scoreResult = calculateExamScore(session, questions);
 
-  const answersPayload: any = { ...session.answers };
+  const answersPayload: Record<string, unknown> = { ...session.answers };
   if (targetGroupCode) {
     answersPayload._meta = { group_code: targetGroupCode };
   }
@@ -104,12 +107,16 @@ async function main() {
     group_code: resultPayload.group_code,
   });
 
-  const { data, error } = await supabase.from("results").insert(resultPayload).select().single();
+  const { data: insertedData, error: insertError } = await supabase
+    .from("results")
+    .insert(resultPayload)
+    .select()
+    .single();
 
-  if (error) {
-    console.error("Error inserting student result:", error);
+  if (insertError) {
+    console.error("Error inserting student result:", insertError);
   } else {
-    console.log("Successfully inserted student result! ID:", data?.id);
+    console.log("Successfully inserted student result! ID:", insertedData?.id);
   }
 }
 

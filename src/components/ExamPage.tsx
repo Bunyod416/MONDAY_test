@@ -9,6 +9,10 @@ import {
   Check,
   X,
   Users,
+  KeyRound,
+  ShieldAlert,
+  ShieldCheck,
+  FileText,
 } from "lucide-react";
 import ExamHeader from "./ExamHeader";
 import MCQQuestionCard from "./MCQQuestionCard";
@@ -34,7 +38,6 @@ import {
   type ExamConfig,
 } from "../utils/config";
 import { verifyAdminPassword } from "../utils/auth";
-import { setExamActive } from "../utils/examLock";
 import {
   CATEGORIES,
   questions as localQuestions,
@@ -188,7 +191,7 @@ type GroupCheckStatus = "idle" | "checking" | "found" | "not_found" | "inactive"
 
 const BLOCKED_STUDENTS_KEY = "exam_blocked_students_v1";
 const ACTIVE_STUDENT_KEY = "exam_active_student_v1";
-const MAX_VIOLATIONS = 5;
+const DEFAULT_MAX_VIOLATIONS = 3;
 const BLUR_GRACE_MS = 1500;
 
 function normalizeStudentName(name: string) {
@@ -254,10 +257,11 @@ export default function ExamPage() {
   const [unlockPassword, setUnlockPassword] = useState("");
   const [unlockError, setUnlockError] = useState(false);
   const fsViolations = useRef(0);
+  const lastViolationTimeRef = useRef(0);
   const ignoreFullscreenChange = useRef(false);
   const backgroundViolationLock = useRef(false);
   const blurTimer = useRef<number | null>(null);
-  const autoDownloadDone = useRef(false);
+  const [downloaded, setDownloaded] = useState(false);
 
   const [questionsList, setQuestionsList] = useState<Question[]>(localQuestions);
   const [submitStatus, setSubmitStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
@@ -476,7 +480,8 @@ export default function ExamPage() {
       const firstCategory = CATEGORIES.find((category) => (s.categoryOrder[category] ?? []).length > 0);
       if (firstCategory) setActiveCategory(firstCategory);
       fsViolations.current = s.violationCount ?? 0;
-      if (isStudentBlocked(s.studentName) || fsViolations.current >= MAX_VIOLATIONS) {
+      const maxLimit = config.maxViolations || DEFAULT_MAX_VIOLATIONS;
+      if (isStudentBlocked(s.studentName) || fsViolations.current >= maxLimit) {
         blockStudent(s.studentName);
         setFsBlocked(true);
         setPhase("exam");
@@ -492,13 +497,7 @@ export default function ExamPage() {
     if (activeStudent && isStudentBlocked(activeStudent)) {
       setRegistrationError("Bu o'quvchi bloklangan va qayta test topshira olmaydi.");
     }
-  }, []);
-
-  // App lock during exam
-  useEffect(() => {
-    setExamActive(phase === "exam");
-    return () => setExamActive(false);
-  }, [phase]);
+  }, [config.maxViolations]);
 
   // Live telemetry channel initialization
   useEffect(() => {
@@ -557,29 +556,43 @@ export default function ExamPage() {
     setStorageWarning(!saveSession(updated));
   }, []);
 
-  const registerViolation = useCallback(() => {
+  const maxViolationsLimit = config.maxViolations || DEFAULT_MAX_VIOLATIONS;
+
+  const triggerViolation = useCallback((_source?: string) => {
+    if (phase !== "exam" || fsBlocked) return;
+    const now = Date.now();
+    // 2.5 soniya ichida kelgan takroriy kaskad hodisalarni bitta qoidabuzarlik deb hisoblash
+    if (now - lastViolationTimeRef.current < 2500) return;
+    if (backgroundViolationLock.current) return;
+
+    lastViolationTimeRef.current = now;
+    backgroundViolationLock.current = true;
+
     fsViolations.current += 1;
-    const maxLimit = config.maxViolations || 3;
+    const currentCount = fsViolations.current;
+    const maxLimit = config.maxViolations || DEFAULT_MAX_VIOLATIONS;
+
     setSession((prev) => {
       if (!prev) return prev;
       const updated = {
         ...prev,
-        violationCount: fsViolations.current,
+        violationCount: currentCount,
         pausedAt: prev.pausedAt ?? Date.now(),
       };
-      if (updated.violationCount >= maxLimit) blockStudent(updated.studentName);
+      if (updated.violationCount >= maxLimit) {
+        blockStudent(updated.studentName);
+      }
       persist(updated);
       return updated;
     });
-    if (fsViolations.current >= maxLimit) setFsBlocked(true);
-    else setFsWarning(true);
-  }, [persist, config.maxViolations]);
 
-  const registerBackgroundViolation = useCallback(() => {
-    if (backgroundViolationLock.current) return;
-    backgroundViolationLock.current = true;
-    registerViolation();
-  }, [registerViolation]);
+    if (currentCount >= maxLimit) {
+      setFsBlocked(true);
+      setFsWarning(false);
+    } else {
+      setFsWarning(true);
+    }
+  }, [phase, fsBlocked, config.maxViolations, persist]);
 
   // Teacher unlock (Ctrl+H)
   useEffect(() => {
@@ -603,18 +616,35 @@ export default function ExamPage() {
       return;
     }
     clearAllBlocks();
-    clearSession();
     fsViolations.current = 0;
+    lastViolationTimeRef.current = 0;
     backgroundViolationLock.current = false;
-    autoDownloadDone.current = false;
+    setDownloaded(false);
     setUnlockOpen(false);
     setUnlockPassword("");
-    setSession(null);
+    setUnlockError(false);
     setFsBlocked(false);
     setFsWarning(false);
     setRegistrationError("");
     setStorageWarning(false);
-    setPhase("register");
+
+    if (session) {
+      const unblockedSession: ExamSession = {
+        ...session,
+        violationCount: 0,
+        pausedAt: null,
+      };
+      persist(unblockedSession);
+      setSession(unblockedSession);
+      if (config.enforceFullscreen) {
+        setPhase("fullscreen");
+      } else {
+        setPhase("exam");
+      }
+    } else {
+      clearSession();
+      setPhase("register");
+    }
   }
 
   const onFsChange = useCallback(() => {
@@ -625,11 +655,14 @@ export default function ExamPage() {
     if (phase !== "exam") return;
     if (!config.enforceFullscreen) return;
     if (!document.fullscreenElement) {
-      registerViolation();
+      triggerViolation("fullscreen_exit");
     } else {
       setFsWarning(false);
+      window.setTimeout(() => {
+        backgroundViolationLock.current = false;
+      }, 1000);
     }
-  }, [phase, registerViolation, config.enforceFullscreen]);
+  }, [phase, triggerViolation, config.enforceFullscreen]);
 
   useEffect(() => {
     document.addEventListener("fullscreenchange", onFsChange);
@@ -640,22 +673,38 @@ export default function ExamPage() {
     if (phase !== "exam") return;
     const blockContextMenu = (event: MouseEvent) => event.preventDefault();
     const blockExamShortcuts = (event: KeyboardEvent) => {
-      const isFunctionKey = event.key === "F11" || event.key === "F12";
-      const isAltTab = event.altKey && event.key === "Tab";
-      const isReload = event.ctrlKey && ["r", "R"].includes(event.key);
-      if (isFunctionKey || isAltTab || isReload) {
+      const isAlt = event.altKey || event.key === "Alt" || (event.code && event.code.startsWith("Alt"));
+      const isTab = event.key === "Tab" || event.code === "Tab";
+      const isAltTab = (event.altKey && isTab) || (isAlt && isTab);
+      const isMeta = event.key === "Meta" || event.key === "OS" || (event.code && event.code.startsWith("Meta"));
+      const isFunctionKey = [
+        "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"
+      ].includes(event.key);
+      const isReload = event.ctrlKey && ["r", "R", "F5"].includes(event.key);
+      const isDevTools =
+        (event.ctrlKey && event.shiftKey && ["I", "i", "J", "j", "C", "c"].includes(event.key)) ||
+        event.key === "F12";
+      const isTabControl = event.ctrlKey && ["w", "W", "t", "T", "n", "N", "Tab"].includes(event.key);
+
+      if (isAltTab || isMeta || isFunctionKey || isReload || isDevTools || isTabControl) {
         event.preventDefault();
         event.stopPropagation();
       }
+
+      if (isAltTab) {
+        triggerViolation("alt_tab_shortcut");
+      }
     };
 
-    document.addEventListener("contextmenu", blockContextMenu);
-    window.addEventListener("keydown", blockExamShortcuts, true);
+    document.addEventListener("contextmenu", blockContextMenu, { capture: true });
+    window.addEventListener("keydown", blockExamShortcuts, { capture: true });
+    window.addEventListener("keyup", blockExamShortcuts, { capture: true });
     return () => {
-      document.removeEventListener("contextmenu", blockContextMenu);
-      window.removeEventListener("keydown", blockExamShortcuts, true);
+      document.removeEventListener("contextmenu", blockContextMenu, { capture: true });
+      window.removeEventListener("keydown", blockExamShortcuts, { capture: true });
+      window.removeEventListener("keyup", blockExamShortcuts, { capture: true });
     };
-  }, [phase]);
+  }, [phase, triggerViolation]);
 
   useEffect(() => {
     if (phase !== "exam") return;
@@ -670,9 +719,11 @@ export default function ExamPage() {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         cancelBlurTimer();
-        registerBackgroundViolation();
+        triggerViolation("visibility_hidden");
       } else {
-        backgroundViolationLock.current = false;
+        window.setTimeout(() => {
+          backgroundViolationLock.current = false;
+        }, 1000);
       }
     };
 
@@ -680,13 +731,14 @@ export default function ExamPage() {
       cancelBlurTimer();
       blurTimer.current = window.setTimeout(() => {
         blurTimer.current = null;
-        if (!document.hasFocus()) registerBackgroundViolation();
+        if (!document.hasFocus()) {
+          triggerViolation("window_blur");
+        }
       }, BLUR_GRACE_MS);
     };
 
     const handleWindowFocus = () => {
       cancelBlurTimer();
-      backgroundViolationLock.current = false;
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
@@ -698,7 +750,7 @@ export default function ExamPage() {
       window.removeEventListener("blur", handleWindowBlur);
       window.removeEventListener("focus", handleWindowFocus);
     };
-  }, [phase, registerBackgroundViolation]);
+  }, [phase, triggerViolation]);
 
   async function requestFullscreen() {
     try { await document.documentElement.requestFullscreen(); } catch { return; }
@@ -796,20 +848,25 @@ export default function ExamPage() {
   }
 
   async function handleResumeFullscreen() {
-    await requestFullscreen();
-    if (document.fullscreenElement) {
-      setSession((prev) => {
-        if (!prev || prev.pausedAt === null) return prev;
-        const updated = {
-          ...prev,
-          pausedAt: null,
-          pausedDuration: prev.pausedDuration + (Date.now() - prev.pausedAt),
-        };
-        persist(updated);
-        return updated;
-      });
+    try {
+      await requestFullscreen();
+    } catch {
+      // Fullscreen might fail in restricted environments
     }
+    setSession((prev) => {
+      if (!prev || prev.pausedAt === null) return prev;
+      const updated = {
+        ...prev,
+        pausedAt: null,
+        pausedDuration: prev.pausedDuration + (Date.now() - prev.pausedAt),
+      };
+      persist(updated);
+      return updated;
+    });
     setFsWarning(false);
+    window.setTimeout(() => {
+      backgroundViolationLock.current = false;
+    }, 1200);
   }
 
   function updateAnswer(questionId: number, answer: SessionAnswer) {
@@ -882,14 +939,14 @@ export default function ExamPage() {
     if (phase !== "exam") return;
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      registerBackgroundViolation();
+      triggerViolation("beforeunload");
       e.preventDefault();
       e.returnValue = "Imtihon yakunlanmagan. Chiqishni xohlaysizmi?";
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [phase, registerBackgroundViolation]);
+  }, [phase, triggerViolation]);
 
   const handleDownload = useCallback(() => {
     const currentSession = sessionRef.current || session;
@@ -921,20 +978,12 @@ export default function ExamPage() {
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
+    setDownloaded(true);
     window.setTimeout(() => {
       URL.revokeObjectURL(url);
       a.remove();
     }, 2000);
   }, [session]);
-
-  useEffect(() => {
-    if (phase !== "submitted" || !session || autoDownloadDone.current) return;
-    const timer = window.setTimeout(() => {
-      autoDownloadDone.current = true;
-      handleDownload();
-    }, 10);
-    return () => window.clearTimeout(timer);
-  }, [phase, session, handleDownload]);
 
   const unlockModal = unlockOpen ? (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6">
@@ -1044,9 +1093,7 @@ export default function ExamPage() {
                       {groupInfo.group_code}
                     </span>
                   </div>
-                  <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-300">
-                    🟢 Faol
-                  </span>
+
                 </div>
                 <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs text-emerald-800 border-t border-emerald-200/60 pt-2 font-medium">
                   <div>
@@ -1159,7 +1206,7 @@ export default function ExamPage() {
                 <p className="font-bold text-[12px]">⚠️ Qoidalar va Eslatmalar:</p>
                 <p>• Guruh kodi kiritilmaguncha test boshlanmaydi</p>
                 <p>• Imtihon faqat to'liq ekranda o'tkaziladi</p>
-                <p>• {MAX_VIOLATIONS} ta qoidabuzarlikdan keyin imtihon bloklanadi</p>
+                <p>• {maxViolationsLimit} ta qoidabuzarlikdan keyin imtihon bloklanadi</p>
                 <p>• Sahifa yangilansa ham javoblaringiz 100% saqlanadi</p>
               </div>
 
@@ -1224,52 +1271,88 @@ export default function ExamPage() {
   // ════════════════════════════════════════════════════════
   if (phase === "submitted") {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
-        <div className="anim-scale-in bg-white rounded-3xl shadow-lg border border-green-100 w-full max-w-md p-8 text-center">
-          <div className="w-16 h-16 rounded-full bg-green-50 ring-1 ring-green-200 flex items-center justify-center mx-auto mb-4 text-green-700">
-            <CheckCircle size={34} />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-800 mb-1">Imtihon Topshirildi!</h2>
-          <p className="text-gray-600 text-sm mb-1">
-            <strong>{session?.studentName}</strong>
-          </p>
-          {session?.groupCode && (
-            <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-200 mb-3 inline-block">
-              Guruh: {session.groupCode}
-            </span>
-          )}
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100 flex flex-col items-center justify-center p-4 sm:p-6">
+        <div className="anim-scale-in bg-white rounded-3xl shadow-xl shadow-slate-200/70 border border-slate-100 w-full max-w-md p-6 sm:p-8 text-center relative overflow-hidden">
+          {/* Top subtle glow */}
+          <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-32 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
 
+          {/* Success Check Badge */}
+          <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-emerald-600/25">
+            <CheckCircle size={38} className="stroke-[2.2]" />
+          </div>
+
+          <h2 className="text-2xl font-extrabold text-slate-800 tracking-tight mb-1">
+            Imtihon Yakunlandi!
+          </h2>
+
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100/80 border border-slate-200/80 mb-4">
+            <span className="text-xs font-semibold text-slate-700">
+              {session?.studentName}
+            </span>
+            {session?.groupCode && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-slate-400" />
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/60">
+                  Guruh: {session.groupCode}
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* Server Sync State Box */}
           {submitStatus === "submitting" && (
-            <div className="my-4 rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700 font-semibold flex items-center justify-center gap-2">
-              <div className="w-3.5 h-3.5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-              <span>Natijalar serverga yuborilmoqda...</span>
+            <div className="my-3.5 rounded-2xl bg-blue-50/90 border border-blue-200/80 p-3.5 text-xs text-blue-800 font-medium flex items-center justify-center gap-2.5">
+              <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+              <span>Natijalar serverga xavfsiz yuklanmoqda...</span>
             </div>
           )}
 
           {submitStatus === "success" && (
-            <div className="my-4 rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 font-semibold flex items-center justify-center gap-1.5">
-              <CheckCircle size={16} className="text-emerald-600" />
-              <span>Natijangiz serverga muvaffaqiyatli saqlandi!</span>
+            <div className="my-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-200/80 p-3.5 text-xs text-emerald-800 font-semibold flex items-center justify-center gap-2">
+              <ShieldCheck size={18} className="text-emerald-600 flex-shrink-0" />
+              <span>Javoblaringiz serverda muvaffaqiyatli saqlandi!</span>
             </div>
           )}
 
           {submitStatus === "error" && (
-            <div className="my-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 font-semibold">
-              ⚠️ Serverga ulanishda uzilish bo'ldi. Zaxira nusxa faylini yuklab olib o'qituvchiga topshiring.
+            <div className="my-3.5 rounded-2xl bg-amber-50 border border-amber-200 p-3.5 text-xs text-amber-900 font-medium text-left flex items-start gap-2.5">
+              <AlertTriangle size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              <span>
+                Serverga ulanishda uzilish bo'ldi. Iltimos, pastdagi tugma orqali zaxira faylni yuklab olib o'qituvchiga topshiring.
+              </span>
             </div>
           )}
 
-          <p className="text-gray-500 text-xs mb-6">
-            Javoblaringiz serverda qayd etildi. Zaxira nusxa uchun shifrlangan faylni ham yuklab olishingiz mumkin.
-          </p>
+          {/* Optional Backup Download Card */}
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <div className="flex items-start gap-2.5 bg-slate-50 border border-slate-200/70 rounded-2xl p-3.5 mb-4 text-left">
+              <FileText size={17} className="text-slate-500 flex-shrink-0 mt-0.5" />
+              <p className="text-slate-600 text-xs leading-relaxed">
+                Javoblaringiz serverda qayd etildi. Zaxira nusxa uchun shifrlangan faylni ham <strong className="font-semibold text-slate-800">ixtiyoriy ravishda</strong> yuklab olishingiz mumkin.
+              </p>
+            </div>
 
-          <button
-            onClick={handleDownload}
-            className="w-full flex items-center justify-center gap-2 bg-green-700 hover:bg-green-800 text-white font-bold py-3.5 rounded-2xl transition-colors text-sm shadow-sm hover:shadow-md"
-          >
-            <Download size={17} />
-            Natijani Yuklab Olish
-          </button>
+            <button
+              type="button"
+              onClick={handleDownload}
+              className={`w-full flex items-center justify-center gap-2 font-bold py-3.5 px-4 rounded-2xl transition-all duration-200 text-sm shadow-sm active:scale-[0.99] ${downloaded
+                ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300"
+                : "bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white shadow-emerald-700/20 hover:shadow-md"
+                }`}
+            >
+              {downloaded ? (
+                <>
+                  <Check size={18} className="text-emerald-600" />
+                  <span>Zaxira fayli yuklab olindi (Qayta yuklash)</span>
+                </>
+              ) : (
+                <>
+                  <Download size={18} />
+                  <span>Zaxira Nusxasini Yuklab Olish</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
         {unlockModal}
       </div>
@@ -1281,20 +1364,21 @@ export default function ExamPage() {
   // ════════════════════════════════════════════════════════
   // EXAM TAKING PHASE
   // ════════════════════════════════════════════════════════
-  const catIds = session.categoryOrder[activeCategory] ?? [];
+  const currentSession = session;
+  const catIds = currentSession.categoryOrder[activeCategory] ?? [];
   const activeCategories = CATEGORIES.filter(
-    (category) => (session.categoryOrder[category] ?? []).length > 0
+    (category) => (currentSession.categoryOrder[category] ?? []).length > 0
   );
   const currentQuestionId = catIds[currentIdx];
   const currentQ = currentQuestionId != null ? getQuestionById(currentQuestionId, questionsList) : null;
 
   function catAnsweredCount(cat: Category): number {
-    const ids = session.categoryOrder[cat] ?? [];
-    return ids.filter((id) => isAnswered(session.answers[id])).length;
+    const ids = currentSession.categoryOrder[cat] ?? [];
+    return ids.filter((id) => isAnswered(currentSession.answers[id])).length;
   }
 
   function catTotalCount(cat: Category): number {
-    return (session.categoryOrder[cat] ?? []).length;
+    return (currentSession.categoryOrder[cat] ?? []).length;
   }
 
   const totalAnswered = CATEGORIES.reduce((s, c) => s + catAnsweredCount(c), 0);
@@ -1311,7 +1395,7 @@ export default function ExamPage() {
   const selectedTotalPoints = CATEGORIES.reduce(
     (sum, cat) =>
       sum +
-      (session.categoryOrder[cat] ?? []).reduce(
+      (currentSession.categoryOrder[cat] ?? []).reduce(
         (s, id) => s + (getQuestionById(id, questionsList)?.points ?? 0),
         0
       ),
@@ -1325,29 +1409,33 @@ export default function ExamPage() {
 
       {/* Fullscreen blocked */}
       {fsBlocked && (
-        <div className="fixed inset-0 z-50 bg-red-700 flex flex-col items-center justify-center text-white p-8 text-center">
-          <AlertTriangle size={60} className="mb-4" />
+        <div className="fixed inset-0 z-50 bg-red-700 flex flex-col items-center justify-center text-white p-8 text-center anim-fade-up">
+          <ShieldAlert size={64} className="mb-4 text-red-200" />
           <h2 className="text-2xl sm:text-3xl font-bold mb-3">Imtihon Bloklab Qo'yildi</h2>
-          <p className="text-red-200 text-sm max-w-sm">
-            {MAX_VIOLATIONS} ta qoidabuzarlik qayd etildi. Blokni faqat o'qituvchi ocha oladi.
+          <p className="text-red-100 text-sm max-w-sm font-semibold mb-1">
+            {session?.violationCount ?? fsViolations.current} ta qoidabuzarlik qayd etildi.
           </p>
+          <p className="text-red-200 text-xs max-w-sm mb-6">
+            (Ruxsat etilgan limit: {maxViolationsLimit} ta). Blokni faqat o'qituvchi ocha oladi.
+          </p>
+
         </div>
       )}
 
       {/* Fullscreen warning */}
       {fsWarning && !fsBlocked && (
-        <div className="fixed inset-0 z-40 bg-black/80 flex flex-col items-center justify-center text-white p-8 text-center">
+        <div className="fixed inset-0 z-40 bg-black/80 flex flex-col items-center justify-center text-white p-8 text-center anim-scale-in">
           <AlertTriangle size={52} className="mb-4 text-yellow-400" />
           <h2 className="text-xl sm:text-2xl font-bold mb-2">To'liq Ekrandan Chiqdingiz!</h2>
           <p className="text-gray-300 mb-1 text-sm font-semibold">
-            Ogohlantirish: {fsViolations.current}/{MAX_VIOLATIONS}
+            Ogohlantirish: {session?.violationCount ?? fsViolations.current}/{maxViolationsLimit}
           </p>
           <p className="text-gray-400 text-xs mb-6 max-w-xs">
-            Yana {MAX_VIOLATIONS - fsViolations.current} marta qoidani buzsangiz imtihon bloklanadi.
+            Yana {Math.max(0, maxViolationsLimit - (session?.violationCount ?? fsViolations.current))} marta qoidani buzsangiz imtihon bloklanadi.
           </p>
           <button
             onClick={handleResumeFullscreen}
-            className="bg-green-700 hover:bg-green-800 text-white font-bold px-8 py-3.5 rounded-2xl transition-colors"
+            className="bg-green-700 hover:bg-green-800 text-white font-bold px-8 py-3.5 rounded-2xl transition-colors cursor-pointer"
           >
             To'liq Ekranga Qaytish
           </button>

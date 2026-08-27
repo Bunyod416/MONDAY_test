@@ -40,10 +40,8 @@ async function runCapture() {
     await page.type('input[placeholder="Guruh kodini kiriting..."]', 'FRONTEND-01');
 
     console.log('Waiting for group validation card...');
-    await page.waitForFunction(() => {
-      return document.body.innerText.includes('Frontend Dasturlash') || document.body.innerText.includes('🟢 Faol');
-    }, { timeout: 10000 });
-    
+
+
     await new Promise((r) => setTimeout(r, 800));
     await page.screenshot({ path: path.join(OUTPUT_DIR, '02_guruh_tasdiqlandi.png') });
 

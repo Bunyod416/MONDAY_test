@@ -30,6 +30,9 @@ async function syncGroupAndVerify() {
     .from("results")
     .select("id, student_name, score, total_points, group_code, submitted_at");
 
+  if (resErr) {
+    console.error("Results fetch error:", resErr);
+  }
   console.log("Current results in Supabase:", results);
 }
 
