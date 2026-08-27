@@ -1,77 +1,88 @@
-# MONDAY Test
+# 🚀 MONDAY Test Platformasi
 
-Imtihon jarayonlarini boshqarish uchun yaratilgan React + TypeScript web-ilova.
-Ilovada imtihon sahifasi va admin sahifasi mavjud.
+Imtihon jarayonlarini xavfsiz va samarali boshqarish uchun yaratilgan zamonaviy **React + TypeScript + Tailwind CSS** veb-ilovasi.
 
-## Texnologiyalar
+> 📖 **Batafsil rasmli foydalanuvchi qo'llanmasi:** [QOLLANMA.md](QOLLANMA.md) faylida to'liq keltirilgan.
 
-- React 18
-- TypeScript
-- Vite
-- Tailwind CSS
-- Lucide React — ikonalar
-- Supabase client — ma’lumotlar bilan ishlash uchun
+---
 
-## Talablar
+## 📸 Tizim Ko'rinishi
 
-- Node.js 18 yoki undan yangi versiya
-- npm
+| Ro'yxatdan O'tish | Imtihon Jarayoni |
+| :---: | :---: |
+| ![Ro'yxatdan o'tish](docs/images/01_kirish_royxat.png) | ![Imtihon jarayoni](docs/images/04_imtihon_mcq_savol.png) |
 
-## O‘rnatish
+| Yakunlash Modali | O'qituvchi / Admin Paneli |
+| :---: | :---: |
+| ![Yakunlash](docs/images/07_yakunlash_tasdiqlash_modal.png) | ![Admin Panel](docs/images/10_admin_monitoring_va_boshqaruv.png) |
 
-Repository’ni klonlang va dependency’larni o‘rnating:
+---
 
+## 🛠 Texnologiyalar
+
+- **Frontend**: React 18, TypeScript, Vite
+- **Styling**: Tailwind CSS
+- **Ikonalar**: Lucide React
+- **Backend / Real-time**: Supabase Client (Presence & Broadcast)
+- **Anti-Cheat**: Fullscreen Enforcer, Blur/Tab-switch detector, ContextMenu blocker
+
+---
+
+## ⚙️ O'rnatish va Ishga Tushirish
+
+### 1. Repository'ni klonlash va paketlarni o'rnatish:
 ```bash
 git clone https://github.com/Bunyod416/MONDAY_test.git
 cd MONDAY_test
 npm install
 ```
 
-## Ishga tushirish
-
-Development server’ni ishga tushirish:
-
+### 2. Ishchi rejimda ishga tushirish (Dev server):
 ```bash
 npm run dev
 ```
+Lokal manzil: `http://localhost:5173`
 
-Keyin terminalda ko‘rsatilgan lokal manzilni brauzerda oching — odatda
-`http://localhost:5173`.
+---
 
-## Npm skriptlar
+## 📋 Npm Skriptlar
 
-| Buyruq              | Vazifasi                              |
-| ------------------- | ------------------------------------- |
-| `npm run dev`       | Development server’ni ishga tushiradi |
-| `npm run build`     | Production build yaratadi             |
-| `npm run preview`   | Production build’ni lokal ko‘rsatadi  |
-| `npm run lint`      | ESLint tekshiruvini bajaradi          |
-| `npm run typecheck` | TypeScript xatolarini tekshiradi      |
+| Buyruq | Vazifasi |
+| :--- | :--- |
+| `npm run dev` | Development serverni ishga tushirish |
+| `npm run build` | Production uchun build yaratish |
+| `npm run preview` | Build natijasini lokal ko'rish |
+| `npm run typecheck` | TypeScript xatoliklarini tekshirish |
 
-## Admin rejimi
+---
 
-Admin rejimiga o‘tish uchun ilova ochiq turgan paytda `Ctrl + Shift + U`
-klavishlar birikmasidan foydalaning. Shu birikma exam va admin ko‘rinishlari
-o‘rtasida almashadi.
+## 🔐 Admin Rejimi
 
-## Loyiha tuzilmasi
+Admin rejimiga o'tish usullari:
+- **Klaviatura yorlig'i**: `Ctrl + Shift + U` yoki `Ctrl + Shift + A`
+- **URL orqali**: Brauzer manziliga `#admin` qo'shish
+- **Standart parol**: `JAMSHID`
+
+---
+
+## 📁 Loyiha Tuzilmasi
 
 ```text
-src/
-├── components/   # ExamPage, AdminPage va qayta ishlatiladigan komponentlar
-├── types/        # TypeScript turlari
-├── utils/        # Yordamchi funksiyalar
-├── App.tsx       # Asosiy ilova va ko‘rinishlar almashinuvi
-├── index.css     # Global stillar
-└── main.tsx      # React ilovasining kirish nuqtasi
+MONDAY_test/
+├── docs/
+│   └── images/       # Haqiqiy interfeys skrinshotlari
+├── scripts/          # Skrinshot olish va avtomatlashtirish skriptlari
+├── src/
+│   ├── components/   # ExamPage, AdminPage va interfeys komponentlari
+│   ├── data/         # Savollar bazasi (HTML, CSS, JS, Python)
+│   ├── types/        # TypeScript interfeyslari
+│   ├── utils/        # Yordamchi funksiyalar (shifrlash, xavfsizlik)
+│   ├── App.tsx       # Asosiy marshrutlash
+│   ├── index.css     # Maxsus stillar va animatsiyalar
+│   └── main.tsx      # Kirish nuqtasi
+├── QOLLANMA.md       # Batafsil rasmli qo'llanma
+└── README.md         # Loyiha haqida umumiy ma'lumot
 ```
 
-## Tekshirish
-
-Build va tekshiruvlarni bajarish:
-
-```bash
-npm run typecheck
-npm run lint
-npm run build
-```
+---
+*© 2026 MONDAY Test Platformasi*

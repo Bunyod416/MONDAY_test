@@ -789,7 +789,7 @@ export default function ExamPage() {
     try {
       await document.documentElement.requestFullscreen();
     } catch {
-      return;
+      // Fullscreen might fail in headless/restricted environments, proceed anyway
     }
     setPhase("exam");
     setFsWarning(false);
