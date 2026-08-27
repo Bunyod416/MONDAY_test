@@ -249,7 +249,6 @@ export default function ExamPage() {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [fsWarning, setFsWarning] = useState(false);
   const [fsBlocked, setFsBlocked] = useState(false);
-  const [downloadCountdown, setDownloadCountdown] = useState(0);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [unlockPassword, setUnlockPassword] = useState("");
@@ -325,19 +324,23 @@ export default function ExamPage() {
   }, [groupCode]);
 
   // Track presence when student is taking the exam
+  const currentStudentName = session?.studentName;
+  const currentGroupCode = session?.groupCode;
+  const currentStartTime = session?.startTime;
+
   useEffect(() => {
-    if (phase === "exam" && session && session.groupCode) {
-      const clean = session.groupCode.trim().toUpperCase();
+    if (phase === "exam" && currentStudentName && currentGroupCode) {
+      const clean = currentGroupCode.trim().toUpperCase();
       const presenceCh = supabase.channel(`presence_${clean}`, {
-        config: { presence: { key: `student_${normalizeStudentName(session.studentName)}` } },
+        config: { presence: { key: `student_${normalizeStudentName(currentStudentName)}` } },
       });
 
       presenceCh.subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
           await presenceCh.track({
-            studentName: session.studentName,
+            studentName: currentStudentName,
             groupCode: clean,
-            startedAt: session.startTime,
+            startedAt: currentStartTime,
           });
         }
       });
@@ -346,7 +349,7 @@ export default function ExamPage() {
         supabase.removeChannel(presenceCh);
       };
     }
-  }, [phase, session?.studentName, session?.groupCode, session?.startTime]);
+  }, [phase, currentStudentName, currentGroupCode, currentStartTime]);
 
   // 1. Initial Data Fetch & URL params
   useEffect(() => {
@@ -370,7 +373,6 @@ export default function ExamPage() {
       checkAndApplyGroup(clean);
     }
   }, [checkAndApplyGroup]);
-
 
   // 2. Realtime Listener for Group and Submissions
   useEffect(() => {
@@ -490,7 +492,7 @@ export default function ExamPage() {
     if (activeStudent && isStudentBlocked(activeStudent)) {
       setRegistrationError("Bu o'quvchi bloklangan va qayta test topshira olmaydi.");
     }
-  }, [questionsList]);
+  }, []);
 
   // App lock during exam
   useEffect(() => {
@@ -500,13 +502,13 @@ export default function ExamPage() {
 
   // Live telemetry channel initialization
   useEffect(() => {
-    if (phase === "exam" && session) {
-      initLiveMonitoring(session.studentName, session.groupCode || "");
+    if (phase === "exam" && currentStudentName) {
+      initLiveMonitoring(currentStudentName, currentGroupCode || "");
       return () => {
         closeLiveMonitoring();
       };
     }
-  }, [phase, session?.studentName, session?.groupCode]);
+  }, [phase, currentStudentName, currentGroupCode]);
 
   // Live telemetry state broadcast on every action
   useEffect(() => {
@@ -549,8 +551,6 @@ export default function ExamPage() {
     currentIdx,
     fsWarning,
     fsBlocked,
-    session?.answers,
-    session?.violationCount,
   ]);
 
   const persist = useCallback((updated: ExamSession) => {
@@ -630,7 +630,6 @@ export default function ExamPage() {
       setFsWarning(false);
     }
   }, [phase, registerViolation, config.enforceFullscreen]);
-
 
   useEffect(() => {
     document.addEventListener("fullscreenchange", onFsChange);
@@ -813,10 +812,6 @@ export default function ExamPage() {
     setFsWarning(false);
   }
 
-  function handleViolationAction() {
-    void handleResumeFullscreen();
-  }
-
   function updateAnswer(questionId: number, answer: SessionAnswer) {
     if (!session) return;
     const updated: ExamSession = {
@@ -842,7 +837,6 @@ export default function ExamPage() {
     sessionRef.current = updatedSession;
 
     setPhase("submitted");
-    setDownloadCountdown(5);
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => { });
     }
@@ -884,47 +878,40 @@ export default function ExamPage() {
     }
   }, [session, persist, questionsList, activeCategory, currentIdx, config.penaltyPerViolation]);
 
-
   useEffect(() => {
-    if (phase !== "submitted" || downloadCountdown <= 0) return;
-    const timer = setTimeout(() => setDownloadCountdown(downloadCountdown - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [phase, downloadCountdown]);
-
-  useEffect(() => {
-    const shouldWarn = phase === "exam" || (phase === "submitted" && downloadCountdown > 0);
-    if (!shouldWarn) return;
+    if (phase !== "exam") return;
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (phase === "exam") registerBackgroundViolation();
+      registerBackgroundViolation();
       e.preventDefault();
       e.returnValue = "Imtihon yakunlanmagan. Chiqishni xohlaysizmi?";
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [phase, downloadCountdown, registerBackgroundViolation]);
+  }, [phase, registerBackgroundViolation]);
 
-  function handleDownload() {
-    if (!session) return;
+  const handleDownload = useCallback(() => {
+    const currentSession = sessionRef.current || session;
+    if (!currentSession) return;
     const payload = {
-      studentName: session.studentName,
-      startTime: session.startTime,
-      pausedDuration: session.pausedDuration,
+      studentName: currentSession.studentName,
+      startTime: currentSession.startTime,
+      pausedDuration: currentSession.pausedDuration,
       submitTime: Date.now(),
-      violationCount: session.violationCount,
-      answers: session.answers,
-      categoryOrder: session.categoryOrder,
-      optionOrders: session.optionOrders,
-      dragOrders: session.dragOrders,
-      groupCode: session.groupCode,
+      violationCount: currentSession.violationCount,
+      answers: currentSession.answers,
+      categoryOrder: currentSession.categoryOrder,
+      optionOrders: currentSession.optionOrders,
+      dragOrders: currentSession.dragOrders,
+      groupCode: currentSession.groupCode,
     };
     const encoded = encodeResult(payload);
     const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const parts = session.studentName.split(" ");
+    const parts = currentSession.studentName.split(" ");
     const fname = parts[0] || "Student";
     const lname = parts.slice(1).join("_") || "Unknown";
-    const groupPrefix = session.groupCode ? `${session.groupCode}_` : "";
+    const groupPrefix = currentSession.groupCode ? `${currentSession.groupCode}_` : "";
     const filename = `${groupPrefix}${fname}_${lname}_${ts}.txt`;
     const blob = new Blob([encoded], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -938,7 +925,7 @@ export default function ExamPage() {
       URL.revokeObjectURL(url);
       a.remove();
     }, 2000);
-  }
+  }, [session]);
 
   useEffect(() => {
     if (phase !== "submitted" || !session || autoDownloadDone.current) return;
@@ -947,7 +934,7 @@ export default function ExamPage() {
       handleDownload();
     }, 10);
     return () => window.clearTimeout(timer);
-  }, [phase, session]);
+  }, [phase, session, handleDownload]);
 
   const unlockModal = unlockOpen ? (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6">
@@ -1300,15 +1287,14 @@ export default function ExamPage() {
   );
   const currentQuestionId = catIds[currentIdx];
   const currentQ = currentQuestionId != null ? getQuestionById(currentQuestionId, questionsList) : null;
-  const activeSession = session;
 
   function catAnsweredCount(cat: Category): number {
-    const ids = activeSession.categoryOrder[cat] ?? [];
-    return ids.filter((id) => isAnswered(activeSession.answers[id])).length;
+    const ids = session.categoryOrder[cat] ?? [];
+    return ids.filter((id) => isAnswered(session.answers[id])).length;
   }
 
   function catTotalCount(cat: Category): number {
-    return (activeSession.categoryOrder[cat] ?? []).length;
+    return (session.categoryOrder[cat] ?? []).length;
   }
 
   const totalAnswered = CATEGORIES.reduce((s, c) => s + catAnsweredCount(c), 0);
@@ -1325,7 +1311,7 @@ export default function ExamPage() {
   const selectedTotalPoints = CATEGORIES.reduce(
     (sum, cat) =>
       sum +
-      (activeSession.categoryOrder[cat] ?? []).reduce(
+      (session.categoryOrder[cat] ?? []).reduce(
         (s, id) => s + (getQuestionById(id, questionsList)?.points ?? 0),
         0
       ),
@@ -1360,7 +1346,7 @@ export default function ExamPage() {
             Yana {MAX_VIOLATIONS - fsViolations.current} marta qoidani buzsangiz imtihon bloklanadi.
           </p>
           <button
-            onClick={handleViolationAction}
+            onClick={handleResumeFullscreen}
             className="bg-green-700 hover:bg-green-800 text-white font-bold px-8 py-3.5 rounded-2xl transition-colors"
           >
             To'liq Ekranga Qaytish
